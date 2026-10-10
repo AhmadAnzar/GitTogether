@@ -13,7 +13,9 @@ FROM nginxinc/nginx-unprivileged:1.30-alpine
 USER root
 RUN apk upgrade --no-cache
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# The image renders templates/*.template into conf.d/ at startup, substituting env vars.
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+ENV BACKEND_URL=http://backend:8000
 USER 101
 EXPOSE 8080
 # Docker/Compose health status (Kubernetes uses its own probes). busybox wget ships with Alpine.
