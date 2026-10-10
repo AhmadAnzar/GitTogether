@@ -3,7 +3,7 @@
 # Images are built and pushed by the CI pipeline, tagged with the full git commit SHA.
 # To deploy a new version, change `tag` (ArgoCD does this through git in Phase 9).
 image:
-  tag: cce17f72636f75a444fef870f3cc1b0a84cdaf30
+  tag: 64d7c3534ab37247befe60c2d5da3bd3d1223784
   pullPolicy: IfNotPresent
 
 backend:
