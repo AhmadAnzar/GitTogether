@@ -66,3 +66,13 @@ def test_me_reports_profile_id(new_user, make_profile):
     owner = new_user()
     profile = make_profile(owner)
     assert owner.get("/api/auth/me").json()["profile_id"] == profile["id"]
+
+def test_unknown_email_still_runs_a_password_check(monkeypatch, client):
+    """Timing defence: login does the same argon2 work whether or not the email exists."""
+    from app.routers import auth
+
+    calls = []
+    real_verify = auth.verify_password
+    monkeypatch.setattr(auth, "verify_password", lambda pw, h: calls.append(h) or real_verify(pw, h))
+    client.post("/api/auth/login", json={"email": "ghost@uni.edu", "password": PASSWORD})
+    assert calls == [auth.DUMMY_HASH]

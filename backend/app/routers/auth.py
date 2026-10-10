@@ -16,6 +16,9 @@ from ..security import (
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
+# Hash of a random, never-used password; checked when the email doesn't exist (see login).
+DUMMY_HASH = hash_password("not-a-real-password-just-for-constant-time")
+
 
 def to_user_out(db: Session, user: User) -> UserOut:
     profile_id = db.scalar(select(Profile.id).where(Profile.user_id == user.id))
@@ -39,8 +42,11 @@ def register(payload: Credentials, response: Response, db: Session = Depends(get
 @router.post("/login", response_model=UserOut)
 def login(payload: Credentials, response: Response, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == payload.email))
-    # Same message whether the email or the password is wrong, so emails can't be probed.
-    if user is None or not verify_password(payload.password, user.password_hash):
+    # Same message AND same work whether the email or the password is wrong: for unknown emails we
+    # still run a full argon2 check against a dummy hash, so response times don't reveal which
+    # emails have accounts.
+    password_ok = verify_password(payload.password, user.password_hash if user else DUMMY_HASH)
+    if user is None or not password_ok:
         raise HTTPException(status_code=401, detail="Wrong email or password")
     set_session_cookie(response, user.id)
     return to_user_out(db, user)
