@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { AVAILABILITY } from '../constants.js';
-import { CloseIcon, GlobeIcon, LockIcon } from './Icons.jsx';
+import { resumeUrl } from '../api.js';
+import { CloseIcon, FileIcon, GlobeIcon, LockIcon } from './Icons.jsx';
+
+const MAX_RESUME_BYTES = 5 * 1024 * 1024;
 
 const EMPTY = {
   name: '',
@@ -21,6 +24,8 @@ export default function ProfileForm({ profile, onSubmit, onClose }) {
   const [skillDraft, setSkillDraft] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [resumeFile, setResumeFile] = useState(null);
+  const [removeResume, setRemoveResume] = useState(false);
   const firstField = useRef(null);
 
   useEffect(() => {
@@ -60,6 +65,18 @@ export default function ProfileForm({ profile, onSubmit, onClose }) {
 
   const removeSkill = (skill) => setForm((f) => ({ ...f, skills: f.skills.filter((s) => s !== skill) }));
 
+  const pickResume = (e) => {
+    const file = e.target.files?.[0] ?? null;
+    setError('');
+    if (file && file.size > MAX_RESUME_BYTES) {
+      setError('Resume must be 5 MB or smaller');
+      e.target.value = '';
+      return;
+    }
+    setResumeFile(file);
+    if (file) setRemoveResume(false);
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     const pending = skillDraft.trim() ? [...form.skills, ...skillDraft.split(',').map((s) => s.trim()).filter(Boolean)] : form.skills;
@@ -78,7 +95,7 @@ export default function ProfileForm({ profile, onSubmit, onClose }) {
     setSaving(true);
     setError('');
     try {
-      await onSubmit(payload);
+      await onSubmit(payload, { resumeFile, removeResume });
     } catch (err) {
       setError(err.message);
       setSaving(false);
@@ -150,6 +167,27 @@ export default function ProfileForm({ profile, onSubmit, onClose }) {
             />
           </label>
 
+          <div className="field">
+            <span>Resume <em>PDF, max 5 MB</em></span>
+            {editing && profile.has_resume && !resumeFile && (
+              <div className="resume-current">
+                <FileIcon width={14} height={14} />
+                <a href={resumeUrl(profile.id)} target="_blank" rel="noopener noreferrer">Current resume</a>
+                <label className="resume-remove">
+                  <input type="checkbox" checked={removeResume} onChange={(e) => setRemoveResume(e.target.checked)} />
+                  Remove it
+                </label>
+              </div>
+            )}
+            <input
+              className="file-input"
+              type="file"
+              accept="application/pdf,.pdf"
+              onChange={pickResume}
+              aria-label={editing && profile.has_resume ? 'Replace resume' : 'Upload resume'}
+            />
+          </div>
+
           <fieldset className="field">
             <legend>Availability</legend>
             <div className="segmented">
@@ -169,12 +207,12 @@ export default function ProfileForm({ profile, onSubmit, onClose }) {
               <label className={form.visibility === 'PUBLIC' ? 'on' : ''}>
                 <input type="radio" name="visibility" value="PUBLIC" checked={form.visibility === 'PUBLIC'} onChange={set('visibility')} />
                 <GlobeIcon />
-                <span><b>Public</b><small>Everyone sees your skills and LinkedIn.</small></span>
+                <span><b>Public</b><small>Everyone sees your skills, LinkedIn and resume.</small></span>
               </label>
               <label className={form.visibility === 'LIMITED' ? 'on' : ''}>
                 <input type="radio" name="visibility" value="LIMITED" checked={form.visibility === 'LIMITED'} onChange={set('visibility')} />
                 <LockIcon />
-                <span><b>Limited</b><small>Only your name, department and availability are shown.</small></span>
+                <span><b>Limited</b><small>Only your connections see skills, LinkedIn and resume. Everyone else sees your name, department and availability.</small></span>
               </label>
             </div>
           </fieldset>

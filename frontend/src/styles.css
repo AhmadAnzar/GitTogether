@@ -324,6 +324,71 @@ button.skill:hover { border-color: var(--ink); }
 }
 .site-foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 18px 0 28px; border-top: 1.5px solid var(--line); font-size: 12px; color: var(--muted); }
 
+/* ---------- Accounts: nav, user chip ---------- */
+.nav-tabs { display: flex; gap: 4px; margin-right: auto; }
+.nav-tab {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px;
+  background: transparent; border: 1.5px solid transparent; font-weight: 500; font-size: 14px; color: var(--ink-2);
+}
+.nav-tab:hover { border-color: var(--soft-line); color: var(--ink); }
+.nav-tab.on { border-color: var(--line); color: var(--ink); font-weight: 700; }
+.badge {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; display: inline-grid; place-items: center;
+  background: var(--accent); color: var(--accent-ink); font-family: var(--mono); font-size: 11px; font-weight: 700;
+}
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
+.user-chip {
+  max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+}
+
+/* ---------- Card: links row + relationship buttons ---------- */
+.card-links { display: flex; flex-wrap: wrap; gap: 6px; }
+.card-links .btn-link { margin-left: 0; }
+.btn-chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 6px 11px; border-radius: 999px;
+  border: 1.5px solid var(--line); background: transparent; font-weight: 700; font-size: 13px;
+}
+.btn-chip:hover { background: var(--ink); color: var(--paper); }
+.btn-chip:disabled { opacity: .55; cursor: progress; }
+.btn-chip.accept { background: var(--accent); color: var(--accent-ink); border-color: var(--ink); }
+.btn-chip.connected { color: var(--open); border-color: var(--open); }
+.btn-chip.connected:hover, .btn-chip.pending:hover { background: transparent; color: var(--danger); border-color: var(--danger); }
+.btn-chip.pending { color: var(--muted); border-style: dashed; border-color: var(--soft-line); }
+
+/* ---------- Forms: resume + auth ---------- */
+.resume-current { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.resume-current a { color: var(--ink); font-weight: 700; }
+.resume-remove { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: var(--muted); font-size: 12px; cursor: pointer; }
+.resume-remove input { width: auto; }
+.file-input { padding: 8px !important; font-size: 13px; cursor: pointer; }
+.file-input::file-selector-button {
+  margin-right: 10px; padding: 6px 10px; border-radius: 6px; border: 1.5px solid var(--line);
+  background: var(--card); color: var(--ink); font: inherit; font-weight: 700; cursor: pointer;
+}
+.sheet-narrow { width: min(420px, 100%); }
+.sheet-foot-split { justify-content: space-between; align-items: center; }
+.auth-reason { margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--tag); font-size: 14px; }
+
+/* ---------- Connections view ---------- */
+.view-head { padding: 48px 0 28px; }
+.view-title { font-size: clamp(32px, 4.4vw, 52px); }
+.connections { display: grid; gap: 36px; padding-bottom: 48px; }
+.section-title { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 18px; }
+.section-title .count { font-family: var(--mono); font-size: 12px; color: var(--muted); font-weight: 500; }
+.section-empty { margin: 0; color: var(--muted); font-size: 14px; }
+.request-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.request-row {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  background: var(--card); border: 1.5px solid var(--line); border-radius: var(--radius);
+}
+.avatar-sm { width: 36px; height: 36px; font-size: 13px; }
+.request-who { flex: 1; min-width: 0; display: grid; }
+.request-who small { color: var(--muted); font-size: 12px; }
+.request-actions { display: flex; align-items: center; gap: 6px; }
+.empty-compact { padding: 28px 16px; margin-bottom: 0; }
+.empty-compact p { font-size: 15px; }
+
 /* ---------- Responsive ---------- */
 @media (max-width: 860px) {
   .hero { grid-template-columns: 1fr; gap: 28px; padding-top: 36px; }
@@ -335,6 +400,11 @@ button.skill:hover { border-color: var(--ink); }
   .brand { margin-right: auto; }
   .topbar .btn-primary span { display: none; }
   .topbar .btn-primary { padding: 10px 12px; }
+  .topbar { flex-wrap: wrap; }
+  .nav-tabs { order: 3; width: 100%; margin-right: 0; }
+  .user-chip { display: none; }
+  .request-row { flex-wrap: wrap; }
+  .request-actions { width: 100%; justify-content: flex-end; }
   .grid { grid-template-columns: 1fr; }
   .stat dd { font-size: 28px; }
   .visibility { grid-template-columns: 1fr; }
