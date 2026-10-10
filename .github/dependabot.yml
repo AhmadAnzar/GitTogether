@@ -1,5 +1,7 @@
 # Dependabot opens pull requests when dependencies have updates or security fixes.
 # Each PR runs the full pipeline (tests + Trivy), so an update is only merged once it's proven safe.
+# Major version jumps (breaking changes) are skipped for libraries; base images only get patch-level
+# updates, since minor/major tags mean a new runtime (Python 3.13, Node 25, nginx mainline).
 version: 2
 updates:
   - package-ecosystem: pip
@@ -8,6 +10,9 @@ updates:
     open-pull-requests-limit: 5
     groups:
       python-dependencies: { patterns: ["*"] }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /frontend
@@ -15,11 +20,17 @@ updates:
     open-pull-requests-limit: 5
     groups:
       npm-dependencies: { patterns: ["*"] }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # Base images: python:3.12-slim, node:22-alpine, nginx-unprivileged
   - package-ecosystem: docker
     directories: [/backend, /frontend]
     schedule: { interval: weekly }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   - package-ecosystem: github-actions
     directory: /

@@ -108,7 +108,7 @@ push and pull request to `main` (docs-only changes are skipped), and manually vi
    below 90% coverage) · frontend ESLint + Vitest + build · Terraform fmt + validate · Trivy config scan
    of Dockerfiles, Kubernetes and Terraform (report-only, published to the Security tab).
 2. **Stage 2, per image:** Docker build → **Trivy image scan that fails on fixable HIGH/CRITICAL CVEs** →
-   push to `ghcr.io/ahmadanzar/gittogether-{backend,frontend}` tagged with the full commit SHA.
+   push to `ghcr.io/ahmadanzar/gittogether/{backend,frontend}` tagged with the full commit SHA.
    Pull requests run everything except the push.
 
 Third-party actions are referenced by version; the Trivy action is pinned to a commit SHA because its
