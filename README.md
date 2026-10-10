@@ -38,7 +38,7 @@ AWS (Terraform)                                   Kubernetes (Helm)
 | Layer | Tools |
 |---|---|
 | Frontend | React 18, Vite 5, plain CSS; served by non-root Nginx 1.30 |
-| Backend | Python 3.12, FastAPI, SQLAlchemy 2, Alembic, Pydantic, Uvicorn |
+| Backend | Python 3.12, FastAPI, SQLAlchemy 2, Alembic, Pydantic, Uvicorn; argon2 password hashing (pwdlib), JWT sessions (PyJWT) |
 | Database | PostgreSQL 16 |
 | Quality | pytest + pytest-cov (90% gate), ruff, ESLint, Vitest |
 | Security | gitleaks, Trivy (image + config scans), GitHub code scanning, Dependabot |
@@ -66,16 +66,34 @@ demo/                screenshots, slides, demo video
 | GET | `/health` | Liveness: the process is up |
 | GET | `/ready` | Readiness: database reachable (503 if not) |
 | GET | `/metrics` | Prometheus metrics |
+| POST | `/api/auth/register` | Create an account (email + password) and log in |
+| POST | `/api/auth/login` · `/api/auth/logout` | Start / end a session |
+| GET | `/api/auth/me` | The logged-in user and their profile id |
 | GET | `/api/profiles` | List profiles. Query: `skill`, `q` (name/department), `availability`, `limit` (≤100), `offset` |
 | GET | `/api/profiles/stats` | Totals per availability, limited count, top public skills |
 | GET | `/api/profiles/{id}` | One profile |
-| POST | `/api/profiles` | Create a profile |
-| PUT | `/api/profiles/{id}` | Update a profile (partial) |
-| DELETE | `/api/profiles/{id}` | Delete a profile |
+| POST | `/api/profiles` | Create your profile (one per account) 🔒 |
+| PUT | `/api/profiles/{id}` | Update your profile (partial) 🔒 owner |
+| DELETE | `/api/profiles/{id}` | Delete your profile 🔒 owner |
+| PUT · DELETE | `/api/profiles/{id}/resume` | Upload (PDF, ≤ 5 MB) or remove your resume 🔒 owner |
+| GET | `/api/profiles/{id}/resume` | Download a resume (subject to the privacy rule) |
+| GET | `/api/connections` | Your connections 🔒 |
+| GET | `/api/connections/requests` | Your pending requests: `incoming` and `outgoing` 🔒 |
+| POST | `/api/connections/requests` | Send a connection request `{ "user_id": … }` 🔒 |
+| POST | `/api/connections/requests/{id}/accept` · `/decline` | Answer a request you received 🔒 |
+| DELETE | `/api/connections/requests/{id}` | Cancel a request you sent 🔒 |
+| DELETE | `/api/connections/{user_id}` | Remove a connection 🔒 |
 
-**Privacy rule:** for `LIMITED` profiles the API itself removes `skills` and `linkedin_url` before
-responding, so the data never reaches the browser, and limited skills are excluded from skill search.
-Interactive docs: `http://localhost:8000/docs`.
+🔒 = requires login. Sessions use an `httpOnly`, `SameSite=Lax` cookie holding a signed JWT (24 h);
+passwords are hashed with argon2 and never stored in plain text.
+
+**Connections:** a request stays pending until the other person accepts (declining or cancelling
+deletes it). Accepted connections are mutual.
+
+**Privacy rule:** a `LIMITED` profile's skills, LinkedIn and resume are visible only to its owner and
+their connections. The API removes those fields before responding, so the data never reaches anyone
+else's browser, and hidden skills are excluded from skill search. Interactive docs:
+`http://localhost:8000/docs`.
 
 ## Run locally
 
@@ -158,7 +176,8 @@ ServiceMonitor, and a Grafana dashboard for request rate, latency and error rate
 
 ## Known limitations
 
-- No user accounts yet: anyone can edit or delete any profile, and a profile owner can't see their own
-  hidden skills. Accounts and "followers can see my skills" are planned as the next feature.
+- No email verification, password reset or login rate limiting yet; anyone can register with any email.
+- Resumes are stored in PostgreSQL; at larger scale they would move to object storage (Amazon S3).
+- Profiles created before accounts existed have no owner and are read-only.
 - PostgreSQL runs inside the cluster with a PersistentVolumeClaim; production would use Amazon RDS.
 - One NAT gateway is shared by both availability zones (cheaper, but a single point of failure).

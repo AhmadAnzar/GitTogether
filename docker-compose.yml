@@ -24,6 +24,8 @@ services:
     build: ./backend
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-gittogether}:${POSTGRES_PASSWORD:-gittogether}@postgres:5432/${POSTGRES_DB:-gittogether}
+      # Signs login tokens. The fallback is for local development only; set your own in .env.
+      JWT_SECRET: ${JWT_SECRET:-local-development-only-change-me-in-env}
     depends_on:
       postgres:
         condition: service_healthy  # wait for Postgres before running Alembic migrations
