@@ -36,11 +36,23 @@ def test_metrics_exposed(client):
 
 # ---------- create + validation ----------
 
-def test_create_profile(make_profile):
-    profile = make_profile()
+def test_create_profile_requires_login(client):
+    assert client.post("/api/profiles", json={"name": "Anon"}).status_code == 401
+
+def test_create_profile(new_user, make_profile):
+    owner = new_user()
+    profile = make_profile(owner)
     assert profile["id"] > 0
+    assert profile["owner_id"] == owner.user["id"]
+    assert profile["is_owner"] is True
+    assert profile["connection_status"] == "SELF"
     assert profile["skills"] == ["Python", "FastAPI", "Docker"]
     assert profile["hidden"] is False
+
+def test_one_profile_per_account(new_user, make_profile):
+    owner = new_user()
+    make_profile(owner)
+    assert owner.post("/api/profiles", json={"name": "Second"}).status_code == 409
 
 def test_skills_are_trimmed_and_deduplicated(make_profile):
     profile = make_profile(skills=" React, react ,Figma,, ")
@@ -51,16 +63,17 @@ def test_name_and_text_fields_are_trimmed(make_profile):
     assert profile["name"] == "Ayesha"
     assert profile["department"] == "CSE"
 
-def test_rejects_empty_or_blank_name(client):
-    assert client.post("/api/profiles", json={"name": ""}).status_code == 422
-    assert client.post("/api/profiles", json={"name": "   "}).status_code == 422
+def test_rejects_empty_or_blank_name(new_user):
+    owner = new_user()
+    assert owner.post("/api/profiles", json={"name": ""}).status_code == 422
+    assert owner.post("/api/profiles", json={"name": "   "}).status_code == 422
 
-def test_rejects_invalid_linkedin_url(client):
-    response = client.post("/api/profiles", json={"name": "Bob", "linkedin_url": "https://evil.example.com/bob"})
+def test_rejects_invalid_linkedin_url(new_user):
+    response = new_user().post("/api/profiles", json={"name": "Bob", "linkedin_url": "https://evil.example.com/bob"})
     assert response.status_code == 422
 
-def test_rejects_too_many_skills(client):
-    response = client.post("/api/profiles", json={"name": "Bob", "skills": [f"skill{i}" for i in range(16)]})
+def test_rejects_too_many_skills(new_user):
+    response = new_user().post("/api/profiles", json={"name": "Bob", "skills": [f"skill{i}" for i in range(16)]})
     assert response.status_code == 422
 
 # ---------- list, search, pagination ----------
@@ -70,6 +83,12 @@ def test_list_profiles_newest_first(client, make_profile):
     make_profile(name="Second")
     names = [p["name"] for p in client.get("/api/profiles").json()]
     assert names == ["Second", "First"]
+
+def test_anonymous_viewer_sees_no_relationship(client, make_profile):
+    make_profile()
+    profile = client.get("/api/profiles").json()[0]
+    assert profile["is_owner"] is False
+    assert profile["connection_status"] == "NONE"
 
 def test_filter_by_skill_and_availability(client, make_profile):
     make_profile(name="Py Dev", skills=["Python"])
@@ -108,49 +127,71 @@ def test_get_profile_and_404(client, make_profile):
     assert client.get(f"/api/profiles/{profile['id']}").json()["name"] == "Ayesha Khan"
     assert client.get("/api/profiles/99999").status_code == 404
 
-def test_update_profile(client, make_profile):
-    profile = make_profile()
-    response = client.put(f"/api/profiles/{profile['id']}", json={"availability": "BUSY", "skills": ["Go"]})
+def test_owner_can_update_profile(new_user, make_profile):
+    owner = new_user()
+    profile = make_profile(owner)
+    response = owner.put(f"/api/profiles/{profile['id']}", json={"availability": "BUSY", "skills": ["Go"]})
     assert response.status_code == 200
     assert response.json()["availability"] == "BUSY"
     assert response.json()["skills"] == ["Go"]
     assert response.json()["name"] == "Ayesha Khan"  # untouched fields are kept
 
-def test_update_ignores_null_for_required_fields(client, make_profile):
+def test_only_the_owner_can_update(client, new_user, make_profile):
     profile = make_profile()
-    response = client.put(f"/api/profiles/{profile['id']}", json={"name": None, "availability": None, "year": None})
+    assert client.put(f"/api/profiles/{profile['id']}", json={"name": "Hacked"}).status_code == 401
+    assert new_user().put(f"/api/profiles/{profile['id']}", json={"name": "Hacked"}).status_code == 403
+    assert client.get(f"/api/profiles/{profile['id']}").json()["name"] == "Ayesha Khan"
+
+def test_update_ignores_null_for_required_fields(new_user, make_profile):
+    owner = new_user()
+    profile = make_profile(owner)
+    response = owner.put(f"/api/profiles/{profile['id']}", json={"name": None, "availability": None, "year": None})
     assert response.status_code == 200
     assert response.json()["name"] == "Ayesha Khan"
     assert response.json()["availability"] == "OPEN_TO_TEAM"
     assert response.json()["year"] is None  # year is optional, so null clears it
 
-def test_update_missing_profile_returns_404(client):
-    assert client.put("/api/profiles/99999", json={"name": "Ghost"}).status_code == 404
+def test_update_missing_profile_returns_404(new_user):
+    assert new_user().put("/api/profiles/99999", json={"name": "Ghost"}).status_code == 404
 
-def test_delete_profile(client, make_profile):
-    profile = make_profile()
-    assert client.delete(f"/api/profiles/{profile['id']}").status_code == 204
+def test_owner_can_delete_profile(client, new_user, make_profile):
+    owner = new_user()
+    profile = make_profile(owner)
+    assert owner.delete(f"/api/profiles/{profile['id']}").status_code == 204
     assert client.get(f"/api/profiles/{profile['id']}").status_code == 404
-    assert client.delete(f"/api/profiles/{profile['id']}").status_code == 404
+    assert owner.delete(f"/api/profiles/{profile['id']}").status_code == 404
 
-# ---------- privacy ----------
+def test_only_the_owner_can_delete(client, new_user, make_profile):
+    profile = make_profile()
+    assert client.delete(f"/api/profiles/{profile['id']}").status_code == 401
+    assert new_user().delete(f"/api/profiles/{profile['id']}").status_code == 403
+    assert client.get(f"/api/profiles/{profile['id']}").status_code == 200
 
-def test_limited_profile_hides_skills_and_linkedin(client, make_profile):
+# ---------- privacy (connections-specific cases are in test_connections.py) ----------
+
+def test_limited_profile_hides_private_fields_from_strangers(client, new_user, make_profile):
     profile = make_profile(visibility="LIMITED")
-    assert profile["hidden"] is True
-    assert profile["skills"] == []
-    assert profile["linkedin_url"] == ""
-    fetched = client.get(f"/api/profiles/{profile['id']}").json()
-    assert fetched["skills"] == [] and fetched["linkedin_url"] == ""
+    for viewer in (client, new_user()):
+        fetched = viewer.get(f"/api/profiles/{profile['id']}").json()
+        assert fetched["hidden"] is True
+        assert fetched["skills"] == [] and fetched["linkedin_url"] == ""
 
-def test_limited_skills_are_not_searchable(client, make_profile):
+def test_owner_sees_own_limited_profile(new_user, make_profile):
+    owner = new_user()
+    profile = make_profile(owner, visibility="LIMITED")
+    fetched = owner.get(f"/api/profiles/{profile['id']}").json()
+    assert fetched["hidden"] is False
+    assert fetched["skills"] == ["Python", "FastAPI", "Docker"]
+
+def test_limited_skills_are_not_searchable_by_strangers(client, make_profile):
     make_profile(name="Shy Student", skills=["Rust"], visibility="LIMITED")
     assert client.get("/api/profiles", params={"skill": "rust"}).json() == []
 
-def test_switching_to_public_reveals_stored_skills(client, make_profile):
-    profile = make_profile(skills=["Rust"], visibility="LIMITED")
-    response = client.put(f"/api/profiles/{profile['id']}", json={"visibility": "PUBLIC"})
-    assert response.json()["skills"] == ["Rust"]
+def test_switching_to_public_reveals_stored_skills(client, new_user, make_profile):
+    owner = new_user()
+    profile = make_profile(owner, skills=["Rust"], visibility="LIMITED")
+    owner.put(f"/api/profiles/{profile['id']}", json={"visibility": "PUBLIC"})
+    assert client.get(f"/api/profiles/{profile['id']}").json()["skills"] == ["Rust"]
 
 # ---------- stats ----------
 
