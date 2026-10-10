@@ -1,19 +1,17 @@
 name: GitTogether CI/CD
 
-# Pipeline: lint + test + build  ->  Docker build  ->  Trivy scan  ->  push to GHCR
+# Pipeline:
+#   secrets scan + backend lint/test + frontend lint/test/build + terraform checks + config scan
+#     -> Docker build -> Trivy image scan (gate) -> push to GHCR
 # Images are tagged with the full commit SHA (never `latest`), so every image traces back to one commit.
 
 on:
   push:
-    branches: [capstone, main]
-    paths:
-      - "gittogether/**"
-      - ".github/workflows/gittogether-ci.yml"
+    branches: [main]
+    paths-ignore: ["**/*.md", "demo/**"] # docs and screenshots don't need a rebuild
   pull_request:
-    branches: [capstone, main]
-    paths:
-      - "gittogether/**"
-      - ".github/workflows/gittogether-ci.yml"
+    branches: [main]
+    paths-ignore: ["**/*.md", "demo/**"]
   workflow_dispatch: # "Run workflow" button in the Actions tab
 
 permissions:
@@ -24,16 +22,35 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  TRIVY_VERSION: v0.70.0
+
 jobs:
   # ========================================
-  # STAGE 1a: backend quality gate
+  # STAGE 1: quality and security gates (all run in parallel)
   # ========================================
+  secrets:
+    name: Secret scan - gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # scan the whole history, not just the latest commit
+
+      - name: Install gitleaks
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            | tar -xz gitleaks
+
+      - name: Scan git history for committed secrets
+        run: ./gitleaks git --redact --verbose --exit-code 1 .
+
   backend:
     name: Backend - lint & test
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: gittogether/backend
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
 
@@ -41,7 +58,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: gittogether/backend/requirements*.txt
+          cache-dependency-path: backend/requirements*.txt
 
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
@@ -52,15 +69,12 @@ jobs:
       - name: Test (pytest, fails below 90% coverage)
         run: pytest -v
 
-  # ========================================
-  # STAGE 1b: frontend build (runs in parallel with the backend job)
-  # ========================================
   frontend:
-    name: Frontend - build
+    name: Frontend - lint, test & build
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: gittogether/frontend
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -68,24 +82,84 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: gittogether/frontend/package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Lint (eslint)
+        run: npm run lint
+
+      - name: Test (vitest)
+        run: npm test
+
       - name: Build
         run: npm run build
+
+  terraform:
+    name: Terraform - fmt & validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.16.4"
+
+      - name: Format check
+        run: terraform fmt -check -recursive
+
+      - name: Init (no backend, no AWS credentials needed)
+        run: terraform init -backend=false -input=false
+
+      - name: Validate
+        run: terraform validate
+
+  config-scan:
+    name: Config scan - Trivy (IaC)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload results to the repo's Security tab
+    steps:
+      - uses: actions/checkout@v4
+
+      # Report-only: misconfigurations in Dockerfiles, Helm, K8s manifests and Terraform are
+      # published to Security -> Code scanning. Accepted risks are documented in .trivyignore.
+      - name: Scan Dockerfiles, Helm, Kubernetes and Terraform
+        # Pinned to a commit SHA, not a tag: tags can be moved or deleted (this action's were in 2026).
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          scan-type: config
+          scan-ref: .
+          skip-dirs: troubleshooting # deliberately broken manifests for the debugging lab
+          trivyignores: .trivyignore
+          format: sarif
+          output: trivy-config.sarif
+          exit-code: "0"
+
+      - name: Upload results to GitHub Security tab
+        if: always() && github.event_name != 'pull_request'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config
 
   # ========================================
   # STAGE 2: build -> scan -> push, once per image
   # ========================================
   images:
     name: Image - ${{ matrix.component }}
-    needs: [backend, frontend]
+    needs: [secrets, backend, frontend, terraform]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write # push to GitHub Container Registry with the built-in GITHUB_TOKEN
+      security-events: write # upload image scan results to the Security tab
     strategy:
       fail-fast: false
       matrix:
@@ -102,7 +176,7 @@ jobs:
       - name: Build image
         uses: docker/build-push-action@v6
         with:
-          context: gittogether/${{ matrix.component }}
+          context: ${{ matrix.component }}
           load: true # keep the image locally so Trivy can scan it before anything is pushed
           push: false
           tags: ${{ env.IMAGE }}:${{ github.sha }}
@@ -114,16 +188,33 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}
 
       - name: Scan image (Trivy, fails on HIGH/CRITICAL)
-        # Pinned to a commit SHA, not a tag: tags can be moved or deleted (this action's were in 2026).
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          version: v0.70.0
+          version: ${{ env.TRIVY_VERSION }}
           image-ref: ${{ env.IMAGE }}:${{ github.sha }}
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           vuln-type: os,library
           exit-code: "1"
+
+      - name: Export scan results (all severities) for the Security tab
+        if: always() && github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          skip-setup-trivy: true
+          image-ref: ${{ env.IMAGE }}:${{ github.sha }}
+          format: sarif
+          output: trivy-${{ matrix.component }}.sarif
+          exit-code: "0"
+
+      - name: Upload image scan to GitHub Security tab
+        if: always() && github.event_name != 'pull_request'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-${{ matrix.component }}.sarif
+          category: trivy-image-${{ matrix.component }}
 
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
