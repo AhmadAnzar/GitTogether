@@ -1,9 +1,5 @@
 # GitTogether
 
-**A campus skill marketplace.** Students list what they can build (skills, LinkedIn, availability) so that
-anyone forming a hackathon or project team can find them. Shy students can choose a **limited** profile:
-their name, department and availability are public, but their skills and LinkedIn stay private.
-
 This repository is also a **DevOps capstone**: it takes the app from a laptop to a monitored Kubernetes
 cluster on AWS, with tests, security scanning and infrastructure as code at every step.
 
