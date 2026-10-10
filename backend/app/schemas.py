@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 Availability = Literal["OPEN_TO_TEAM", "BUSY", "NOT_LOOKING"]
 Visibility = Literal["PUBLIC", "LIMITED"]
+# The viewer's relationship to a profile's owner.
+ConnectionStatus = Literal["SELF", "CONNECTED", "PENDING_OUTGOING", "PENDING_INCOMING", "NONE"]
 
 MAX_SKILLS = 15
 
@@ -15,6 +17,7 @@ Bio = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
 Department = Annotated[str, StringConstraints(strip_whitespace=True, max_length=80)]
 
 LINKEDIN_RE = re.compile(r"^https://(www\.)?linkedin\.com/in/[A-Za-z0-9_%-]+/?$")
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 def clean_skills(value: list[str] | str | None) -> list[str] | None:
     """Accept a list or a comma-separated string; trim, drop blanks and case-insensitive duplicates."""
@@ -67,6 +70,7 @@ class ProfileUpdate(BaseModel):
 
 class ProfileOut(BaseModel):
     id: int
+    owner_id: int | None
     name: str
     bio: str
     skills: list[str]
@@ -75,8 +79,58 @@ class ProfileOut(BaseModel):
     year: int | None
     availability: Availability
     visibility: Visibility
-    hidden: bool  # True when skills/LinkedIn were withheld because the profile is LIMITED
+    hidden: bool  # True when skills/LinkedIn/resume were withheld from this viewer (LIMITED profile)
+    has_resume: bool  # only True when a resume exists AND this viewer may see it
+    is_owner: bool
+    connection_status: ConnectionStatus
+    request_id: int | None  # the pending request, so the viewer can accept/decline/cancel it
+    connections_count: int
     created_at: datetime
+
+# ---------- accounts ----------
+
+class Credentials(BaseModel):
+    email: Annotated[str, StringConstraints(strip_whitespace=True, to_lower=True, max_length=254)]
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, value: str) -> str:
+        if not EMAIL_RE.match(value):
+            raise ValueError("enter a valid email address")
+        return value
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    profile_id: int | None
+
+# ---------- connections ----------
+
+class ConnectionRequestCreate(BaseModel):
+    user_id: int
+
+class ConnectionRequestOut(BaseModel):
+    id: int
+    user_id: int  # the other person
+    profile: ProfileOut | None  # None if they haven't created a profile yet
+    created_at: datetime
+
+class ConnectionRequestsOut(BaseModel):
+    incoming: list[ConnectionRequestOut]
+    outgoing: list[ConnectionRequestOut]
+
+class ConnectionOut(BaseModel):
+    user_id: int
+    profile: ProfileOut | None
+    connected_at: datetime | None
+
+# ---------- resumes ----------
+
+class ResumeOut(BaseModel):
+    filename: str
+    size_bytes: int
+    uploaded_at: datetime
 
 class SkillCount(BaseModel):
     skill: str

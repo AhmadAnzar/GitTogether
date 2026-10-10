@@ -8,3 +8,7 @@ psycopg[binary]==3.3.6
 pydantic-settings==2.15.0
 prometheus-fastapi-instrumentator==8.1.0
 alembic==1.20.0
+# Accounts and uploads
+pwdlib[argon2]==0.3.1
+PyJWT==2.15.0
+python-multipart==0.0.32
