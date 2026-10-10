@@ -1,0 +1,4 @@
+# metrics-server feeds CPU/memory to the HPA. kind's kubelets use self-signed certs, hence the flag.
+# helm upgrade --install metrics-server metrics-server/metrics-server --version 3.14.0 -n kube-system -f k8s/local/metrics-server-values.yaml
+args:
+  - --kubelet-insecure-tls

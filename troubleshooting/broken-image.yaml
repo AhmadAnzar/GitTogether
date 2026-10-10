@@ -1,10 +1,33 @@
+# Troubleshooting lab 1: a Deployment whose image tag doesn't exist.
+#   kubectl apply -f troubleshooting/broken-image.yaml
+#   kubectl get pods -n gittogether                 -> ErrImagePull / ImagePullBackOff
+#   kubectl describe pod <pod> -n gittogether       -> Events: "manifest unknown" / not found
+# Fix: point `image` at a tag the pipeline actually pushed (a commit SHA), then re-apply.
+# Clean up: kubectl delete -f troubleshooting/broken-image.yaml
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: taskboard-broken-image, namespace: taskboard}
+metadata:
+  name: broken-image
+  namespace: gittogether
 spec:
   replicas: 1
-  selector: {matchLabels: {app: broken-image}}
+  selector:
+    matchLabels: { app: broken-image }
   template:
-    metadata: {labels: {app: broken-image}}
+    metadata:
+      labels: { app: broken-image }
     spec:
-      containers: [{name: backend, image: ghcr.io/example/taskboard-backend:does-not-exist}]
+      # Compliant with the namespace's "restricted" Pod Security level, so the only problem is the image.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: backend
+          image: ghcr.io/ahmadanzar/gittogether/backend:does-not-exist
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 100m, memory: 64Mi }

@@ -1,0 +1,68 @@
+# Default values. Environment-specific overrides: values-kind.yaml (local), values-eks.yaml (AWS).
+
+# Images are built and pushed by the CI pipeline, tagged with the full git commit SHA.
+# To deploy a new version, change `tag` (ArgoCD does this through git in Phase 9).
+image:
+  tag: cce17f72636f75a444fef870f3cc1b0a84cdaf30
+  pullPolicy: IfNotPresent
+
+backend:
+  image: ghcr.io/ahmadanzar/gittogether/backend
+  replicas: 2 # ignored while autoscaling is enabled
+  # Session cookie only over HTTPS. Keep false until the Ingress serves HTTPS.
+  cookieSecure: false
+  resources:
+    requests: { cpu: 100m, memory: 192Mi }
+    # argon2 password hashing is deliberately memory-hard (~64 MiB per login), so leave headroom.
+    limits: { cpu: 500m, memory: 512Mi }
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+
+frontend:
+  image: ghcr.io/ahmadanzar/gittogether/frontend
+  replicas: 2
+  resources:
+    requests: { cpu: 25m, memory: 32Mi }
+    limits: { cpu: 200m, memory: 128Mi }
+
+postgres:
+  image: postgres:16-alpine
+  database: gittogether
+  username: gittogether
+  storage:
+    size: 5Gi
+    storageClassName: "" # "" = the cluster's default StorageClass
+    deleteOnUninstall: true # `helm uninstall` also deletes the volume (and its cloud disk)
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+# Passwords and keys are NOT in this file or in git. The chart reads them from a Kubernetes
+# Secret with keys POSTGRES_PASSWORD and JWT_SECRET; scripts/create-secrets.sh creates it
+# with random values. Default name: <fullname>-secrets.
+secrets:
+  existingSecret: ""
+
+ingress:
+  enabled: true
+  className: traefik
+  host: "" # "" = any host (e.g. the load balancer's hostname on EKS)
+
+# Keep at least one pod of each component running during voluntary disruptions (node drains).
+podDisruptionBudget:
+  enabled: true
+
+# Requires the Prometheus Operator CRDs (kube-prometheus-stack, Phase 8).
+monitoring:
+  serviceMonitor:
+    enabled: false
+    releaseLabel: kube-prometheus-stack # must match the Prometheus release's selector
+    interval: 15s
+
+# EKS has no default StorageClass on new clusters; values-eks.yaml enables a gp3 one.
+storageClass:
+  create: false
+  name: gp3

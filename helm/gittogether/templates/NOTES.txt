@@ -1,0 +1,18 @@
+GitTogether {{ .Chart.AppVersion }} is deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Image tag: {{ .Values.image.tag }}
+
+Check it:
+  kubectl get pods,svc,ingress -n {{ .Release.Namespace }}
+  kubectl get hpa -n {{ .Release.Namespace }}
+{{- if .Values.ingress.enabled }}
+
+Open the app through the Ingress ({{ .Values.ingress.className }}):
+{{- if .Values.ingress.host }}
+  http://{{ .Values.ingress.host }}/
+{{- else }}
+  kubectl get svc -A | grep -i traefik   # use the EXTERNAL-IP / hostname shown
+{{- end }}
+{{- end }}
+
+Secrets come from the "{{ include "gittogether.secretName" . }}" Secret (scripts/create-secrets.sh).

@@ -1,0 +1,11 @@
+# Traefik ingress controller on EKS: a LoadBalancer Service, which makes AWS create an internet-facing
+# load balancer in the public subnets (tagged kubernetes.io/role/elb by Terraform).
+# helm upgrade --install traefik traefik/traefik --version 41.6.0 -n traefik --create-namespace -f k8s/eks/traefik-values.yaml
+service:
+  type: LoadBalancer
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+# metrics-server is already installed on EKS as a Terraform-managed add-on.

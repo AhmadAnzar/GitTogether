@@ -1,0 +1,106 @@
+{{- $host := include "gittogether.postgresHost" . -}}
+# Headless Service: gives the StatefulSet pod a stable DNS name (<fullname>-postgres) for the backend.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $host }}
+  labels:
+    {{- include "gittogether.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  clusterIP: None
+  selector:
+    {{- include "gittogether.selectorLabels" (dict "ctx" . "component" "postgres") | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+# A StatefulSet (not a Deployment) because the database owns a persistent volume and needs a stable
+# identity. Production would use a managed database (Amazon RDS) instead.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $host }}
+  labels:
+    {{- include "gittogether.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: {{ $host }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "gittogether.selectorLabels" (dict "ctx" . "component" "postgres") | nindent 6 }}
+  {{- if .Values.postgres.storage.deleteOnUninstall }}
+  # Delete the volume (and the cloud disk behind it) when the release is uninstalled, so a demo
+  # cluster never leaves a paid EBS volume behind. Set deleteOnUninstall: false to keep the data.
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
+    whenScaled: Retain
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "gittogether.labels" . | nindent 8 }}
+        app.kubernetes.io/component: postgres
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70 # postgres user in the Alpine image
+        runAsGroup: 70
+        fsGroup: 70 # lets uid 70 write to the volume
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - { name: POSTGRES_DB, value: {{ .Values.postgres.database | quote }} }
+            - { name: POSTGRES_USER, value: {{ .Values.postgres.username | quote }} }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ include "gittogether.secretName" . }}, key: POSTGRES_PASSWORD }
+            # A subdirectory, because a fresh cloud volume's root contains lost+found and initdb
+            # refuses a non-empty directory.
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports:
+            - { name: postgres, containerPort: 5432 }
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -h 127.0.0.1 -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -h 127.0.0.1 -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          securityContext:
+            {{- include "gittogether.containerSecurityContext" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: run, mountPath: /var/run/postgresql } # unix socket and lock file
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: run
+          emptyDir: { sizeLimit: 1Mi }
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "gittogether.selectorLabels" (dict "ctx" . "component" "postgres") | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.postgres.storage.storageClassName }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgres.storage.size }}

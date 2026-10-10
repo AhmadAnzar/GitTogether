@@ -1,0 +1,7 @@
+# Local cluster (kind). Usage:
+#   helm upgrade --install gittogether helm/gittogether -n gittogether -f helm/gittogether/values-kind.yaml
+ingress:
+  host: gittogether.localhost # browsers resolve *.localhost to 127.0.0.1; kind maps host port 80 to Traefik
+postgres:
+  storage:
+    size: 1Gi # kind's local-path provisioner (default StorageClass "standard")

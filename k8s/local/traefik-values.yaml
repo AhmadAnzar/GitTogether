@@ -1,0 +1,12 @@
+# Traefik ingress controller on kind: exposed as NodePorts 30080/30443 (mapped to host 80/443 by kind).
+# helm upgrade --install traefik traefik/traefik --version 41.6.0 -n traefik --create-namespace -f k8s/local/traefik-values.yaml
+service:
+  type: NodePort
+ports:
+  web:
+    nodePort: 30080
+  websecure:
+    nodePort: 30443
+ingressClass:
+  enabled: true
+  isDefaultClass: true

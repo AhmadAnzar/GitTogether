@@ -1,0 +1,10 @@
+# AWS EKS (cluster from terraform/). Usage:
+#   helm upgrade --install gittogether helm/gittogether -n gittogether -f helm/gittogether/values-eks.yaml
+ingress:
+  host: "" # any host: the browser uses the Traefik load balancer's AWS hostname
+storageClass:
+  create: true # gp3 EBS class, marked default (EKS has none by default)
+postgres:
+  storage:
+    storageClassName: gp3
+    size: 5Gi

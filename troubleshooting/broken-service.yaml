@@ -1,6 +1,19 @@
+# Troubleshooting lab 2: a Service whose selector matches no pods, so it has no endpoints.
+#   kubectl apply -f troubleshooting/broken-service.yaml
+#   kubectl get endpointslices -n gittogether -l kubernetes.io/service-name=broken-service   -> no endpoints
+#   kubectl get pods -n gittogether --show-labels                                             -> compare labels
+# Fix: set the selector to the backend's labels, e.g.
+#   app.kubernetes.io/name: gittogether
+#   app.kubernetes.io/component: backend
+# Clean up: kubectl delete -f troubleshooting/broken-service.yaml
 apiVersion: v1
 kind: Service
-metadata: {name: broken-service, namespace: taskboard}
+metadata:
+  name: broken-service
+  namespace: gittogether
 spec:
-  selector: {app: label-that-does-not-exist}
-  ports: [{port: 8080, targetPort: 8080}]
+  selector:
+    app: label-that-does-not-exist
+  ports:
+    - port: 8000
+      targetPort: 8000

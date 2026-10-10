@@ -1,0 +1,18 @@
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+# Tells the Prometheus Operator to scrape /metrics on every backend pod (through the backend Service).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "gittogether.fullname" . }}-backend
+  labels:
+    {{- include "gittogether.labels" . | nindent 4 }}
+    release: {{ .Values.monitoring.serviceMonitor.releaseLabel }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "gittogether.selectorLabels" (dict "ctx" . "component" "backend") | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+{{- end }}

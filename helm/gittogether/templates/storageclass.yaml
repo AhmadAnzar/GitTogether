@@ -1,0 +1,19 @@
+{{- if .Values.storageClass.create }}
+# New EKS clusters don't mark any StorageClass as default, so PersistentVolumeClaims would stay
+# Pending. This gp3 class uses the EBS CSI driver add-on installed by Terraform.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .Values.storageClass.name }}
+  labels:
+    {{- include "gittogether.labels" . | nindent 4 }}
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+reclaimPolicy: Delete # deleting the claim deletes the EBS volume (no orphaned, billed disks)
+volumeBindingMode: WaitForFirstConsumer # create the disk in the AZ where the pod is scheduled
+allowVolumeExpansion: true
+{{- end }}

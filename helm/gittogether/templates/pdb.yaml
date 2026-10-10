@@ -1,0 +1,18 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- range $component := list "backend" "frontend" }}
+---
+# During voluntary disruptions (node drains, cluster upgrades) keep at least one pod serving.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "gittogether.fullname" $ }}-{{ $component }}
+  labels:
+    {{- include "gittogether.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "gittogether.selectorLabels" (dict "ctx" $ "component" $component) | nindent 6 }}
+{{- end }}
+{{- end }}
