@@ -119,6 +119,37 @@ jobs:
       - name: Validate
         run: terraform validate
 
+  helm:
+    name: Helm - lint & validate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/setup-helm@v5
+        with:
+          version: v4.3.0
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz \
+            | tar -xz kubeconform
+
+      - name: Lint chart (local and EKS values)
+        run: |
+          helm lint helm/gittogether -f helm/gittogether/values-kind.yaml
+          helm lint helm/gittogether -f helm/gittogether/values-eks.yaml
+
+      - name: Validate rendered manifests against the Kubernetes API schema
+        run: |
+          for env in kind eks; do
+            echo "::group::values-$env"
+            helm template gittogether helm/gittogether -n gittogether -f "helm/gittogether/values-$env.yaml" \
+              --set monitoring.serviceMonitor.enabled=true \
+              | ./kubeconform -strict -summary -skip ServiceMonitor  # CRD schema isn't in the default catalog
+            echo "::endgroup::"
+          done
+          ./kubeconform -strict -summary k8s/namespace.yaml troubleshooting/
+
   config-scan:
     name: Config scan - Trivy (IaC)
     runs-on: ubuntu-24.04
@@ -155,7 +186,7 @@ jobs:
   # ========================================
   images:
     name: Image - ${{ matrix.component }}
-    needs: [secrets, backend, frontend, terraform]
+    needs: [secrets, backend, frontend, terraform, helm]
     runs-on: ubuntu-24.04
     permissions:
       contents: read

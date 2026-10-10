@@ -43,9 +43,9 @@ AWS credentials come from `aws configure`. They are never stored in this folder.
 Kubernetes creates some AWS resources itself (the Ingress load balancer and the PostgreSQL EBS volume). Terraform doesn't know about them, so remove them first or `terraform destroy` will hang on the VPC and leave paid volumes behind:
 
 ```bash
-helm uninstall gittogether -n gittogether        # app + its PersistentVolumeClaim
-kubectl delete pvc --all -n gittogether
-helm uninstall ingress-nginx -n ingress-nginx    # deletes the AWS load balancer
+helm uninstall gittogether -n gittogether        # app; also deletes the Postgres volume (EBS disk)
+kubectl get pvc -n gittogether                   # must print nothing
+helm uninstall traefik -n traefik                # deletes the AWS load balancer
 kubectl get svc -A | grep LoadBalancer           # must print nothing
 terraform destroy
 ```

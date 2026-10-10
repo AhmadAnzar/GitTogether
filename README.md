@@ -45,7 +45,7 @@ AWS (Terraform)                                   Kubernetes (Helm)
 | Containers | Docker (multi-stage frontend, non-root users), Docker Compose |
 | CI/CD | GitHub Actions, GitHub Container Registry (GHCR) |
 | Infrastructure | Terraform, AWS VPC, EKS, KMS |
-| Kubernetes | Helm, Ingress (ingress-nginx), HPA, metrics-server |
+| Kubernetes | Helm, Ingress (Traefik), HPA, metrics-server, Pod Security Admission (restricted), kind for local clusters |
 | Observability | Prometheus, Grafana, `/metrics` via prometheus-fastapi-instrumentator |
 
 ## Repository layout
@@ -54,7 +54,7 @@ AWS (Terraform)                                   Kubernetes (Helm)
 .github/workflows/   CI/CD pipeline        backend/      FastAPI app, Alembic migrations, tests
 .github/dependabot.yml                     frontend/     React app, Nginx config, tests
 terraform/           AWS VPC + EKS          helm/         Helm chart for the app
-k8s/                 namespace manifests    monitoring/   Prometheus/Grafana values
+k8s/                 namespace, kind/EKS add-on values   monitoring/   Prometheus/Grafana values
 scripts/             load-test helper       troubleshooting/  deliberately broken manifests (lab)
 demo/                screenshots, slides, demo video
 ```
@@ -123,7 +123,8 @@ Defined in [`.github/workflows/gittogether-ci.yml`](.github/workflows/gittogethe
 push and pull request to `main` (docs-only changes are skipped), and manually via **Run workflow**.
 
 1. **Stage 1, in parallel:** gitleaks secret scan of the full history · backend ruff + pytest (fails
-   below 90% coverage) · frontend ESLint + Vitest + build · Terraform fmt + validate · Trivy config scan
+   below 90% coverage) · frontend ESLint + Vitest + build · Terraform fmt + validate · Helm lint + kubeconform
+   schema validation of the rendered manifests · Trivy config scan
    of Dockerfiles, Kubernetes and Terraform (report-only, published to the Security tab).
 2. **Stage 2, per image:** Docker build → **Trivy image scan that fails on fixable HIGH/CRITICAL CVEs** →
    push to `ghcr.io/ahmadanzar/gittogether/{backend,frontend}` tagged with the full commit SHA.
@@ -165,9 +166,72 @@ aws eks update-kubeconfig --region ap-south-1 --name gittogether-eks
 
 ## Kubernetes / Helm
 
-*In progress (Phase 7):* namespace, Helm chart with backend and frontend Deployments (2+ replicas each),
-ClusterIP Services, PostgreSQL with a PersistentVolumeClaim, Ingress routing `/` and `/api`, and an HPA
-on the backend.
+The app is packaged as a Helm chart in [`helm/gittogether`](helm/gittogether):
+
+| Resource | Details |
+|---|---|
+| Backend `Deployment` | 2–5 replicas (HPA on CPU, 70% target). An init container runs `alembic upgrade head` first; a Postgres advisory lock makes replicas take turns. Liveness `/health`, readiness `/ready`. |
+| Frontend `Deployment` | 2 replicas, non-root nginx; its `/api` proxy target comes from `BACKEND_URL`. |
+| PostgreSQL `StatefulSet` | 1 replica with its own PersistentVolumeClaim (deleted on `helm uninstall`, so no disk is left behind). |
+| `Service`s | ClusterIP for backend and frontend, headless for Postgres. |
+| `Ingress` | `/api` → backend, `/` → frontend (Traefik). `/metrics`, `/health`, `/ready` are not exposed. |
+| `HorizontalPodAutoscaler`, `PodDisruptionBudget`s | Scale the API on CPU; keep at least one pod of each component during node drains. |
+| `ServiceMonitor` | Prometheus scraping of `/metrics` (enabled with the monitoring stack). |
+
+**Security:** the `gittogether` namespace enforces the Kubernetes **restricted** Pod Security level, so
+every pod must run as non-root, with a read-only root filesystem, no privilege escalation, all Linux
+capabilities dropped and the RuntimeDefault seccomp profile; anything else is rejected at admission.
+Passwords and the JWT key are **not in git or in values files**: `scripts/create-secrets.sh` creates
+a Kubernetes Secret with random values, which the chart references.
+
+**Ingress controller:** Traefik. The previously common ingress-nginx project was retired by the
+Kubernetes project in March 2026 and no longer receives security fixes; Traefik implements the same
+standard `Ingress` resource.
+
+### Run it on a local cluster (kind)
+
+```bash
+kind create cluster --config k8s/local/kind-config.yaml        # maps host ports 80/443 to the cluster
+helm repo add traefik https://traefik.github.io/charts
+helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+helm upgrade --install traefik traefik/traefik --version 41.6.0 -n traefik --create-namespace -f k8s/local/traefik-values.yaml
+helm upgrade --install metrics-server metrics-server/metrics-server --version 3.14.0 -n kube-system -f k8s/local/metrics-server-values.yaml
+
+kubectl apply -f k8s/namespace.yaml
+scripts/create-secrets.sh
+helm upgrade --install gittogether helm/gittogether -n gittogether -f helm/gittogether/values-kind.yaml
+
+kubectl get pods,svc,ingress,hpa -n gittogether
+```
+
+Open http://gittogether.localhost. Watch autoscaling with `scripts/load-test.sh` and
+`kubectl get hpa -n gittogether -w`.
+
+### Run it on EKS
+
+After `terraform apply` and `aws eks update-kubeconfig ...`:
+
+```bash
+helm upgrade --install traefik traefik/traefik --version 41.6.0 -n traefik --create-namespace -f k8s/eks/traefik-values.yaml
+kubectl apply -f k8s/namespace.yaml
+scripts/create-secrets.sh
+helm upgrade --install gittogether helm/gittogether -n gittogether -f helm/gittogether/values-eks.yaml
+kubectl get svc -n traefik traefik      # EXTERNAL-IP = the AWS load balancer hostname to open
+```
+
+`values-eks.yaml` also creates a default `gp3` StorageClass (new EKS clusters have none).
+metrics-server is installed on EKS by Terraform as a managed add-on.
+
+### Deploy a new version
+
+The pipeline tags images with the commit SHA. Set `image.tag` in `helm/gittogether/values.yaml` to that
+SHA and run `helm upgrade` (ArgoCD automates this in the GitOps setup). Roll back with
+`helm rollback gittogether <revision> -n gittogether`.
+
+### Troubleshooting lab
+
+`troubleshooting/` contains two deliberately broken manifests (an image that doesn't exist, a Service
+whose selector matches nothing) with the commands to diagnose and fix them in their comments.
 
 ## Observability
 
