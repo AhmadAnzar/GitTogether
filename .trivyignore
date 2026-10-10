@@ -1,0 +1,19 @@
+# Accepted risks for `trivy config` (report-only scan in CI). Each entry has a reason.
+# Revisit before using this setup for anything beyond a course demo.
+
+# EKS API endpoint is reachable from the internet (CRITICAL x2).
+# Needed so kubectl/Helm on a laptop and CI can reach the cluster without a VPN or bastion host.
+# Access still requires AWS IAM authentication. Production fix: endpoint_public_access_cidrs or private-only.
+AWS-0040
+AWS-0041
+
+# Worker node security group allows all outbound traffic (CRITICAL).
+# Nodes must pull images from GHCR/ECR and reach AWS APIs; egress goes through the NAT gateway.
+AWS-0104
+
+# No EKS control-plane logging to CloudWatch (MEDIUM). Billed per GB; observability comes from
+# Prometheus/Grafana in-cluster instead.
+AWS-0038
+
+# No VPC flow logs (MEDIUM). Billed per GB; not needed for a short-lived demo environment.
+AWS-0178

@@ -3,9 +3,10 @@
 #   Internet -> load balancer (public subnets) -> worker nodes (private subnets) -> NAT gateway -> Internet
 #
 # Worker nodes have no public IPs; they reach the internet (image pulls) through a single NAT gateway.
-# Cost choices (runs on AWS credits): one NAT gateway instead of one per AZ, no KMS key or CloudWatch
-# control-plane logs (both bill monthly and outlive a short demo), and a Kubernetes version in STANDARD
-# support (extended support is $0.60/hr vs $0.10/hr for the control plane).
+# Cost choices (runs on AWS credits): one NAT gateway instead of one per AZ, no CloudWatch control-plane
+# logs or VPC flow logs, and a Kubernetes version in STANDARD support (extended support is $0.60/hr vs
+# $0.10/hr). Kubernetes Secrets ARE encrypted with a KMS key (~$1/month, billed hourly).
+# Accepted security trade-offs are documented in ../.trivyignore.
 
 data "aws_availability_zones" "available" {
   state = "available"
@@ -56,8 +57,10 @@ module "eks" {
   endpoint_public_access                   = true
   enable_cluster_creator_admin_permissions = true
 
-  create_kms_key              = false
-  encryption_config           = null
+  # Envelope-encrypt Kubernetes Secrets with a customer-managed KMS key. The shortest deletion window
+  # (7 days) means the key is gone soon after `terraform destroy`; keys pending deletion are not billed.
+  kms_key_deletion_window_in_days = 7
+
   create_cloudwatch_log_group = false
   enabled_log_types           = []
 
