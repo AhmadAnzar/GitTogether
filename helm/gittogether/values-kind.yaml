@@ -5,3 +5,7 @@ ingress:
 postgres:
   storage:
     size: 1Gi # kind's local-path provisioner (default StorageClass "standard")
+monitoring:
+  serviceMonitor:
+    enabled: true # needs the Prometheus Operator CRDs: run scripts/install-monitoring.sh (ArgoCD retries until they exist)
+    releaseLabel: monitoring # release name used by scripts/install-monitoring.sh

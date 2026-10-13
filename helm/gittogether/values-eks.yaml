@@ -8,3 +8,7 @@ postgres:
   storage:
     storageClassName: gp3
     size: 5Gi
+monitoring:
+  serviceMonitor:
+    enabled: true # needs the Prometheus Operator CRDs: run scripts/install-monitoring.sh (ArgoCD retries until they exist)
+    releaseLabel: monitoring # release name used by scripts/install-monitoring.sh

@@ -174,7 +174,7 @@ The app is packaged as a Helm chart in [`helm/gittogether`](helm/gittogether):
 | Frontend `Deployment` | 2 replicas, non-root nginx; its `/api` proxy target comes from `BACKEND_URL`. |
 | PostgreSQL `StatefulSet` | 1 replica with its own PersistentVolumeClaim (deleted on `helm uninstall`, so no disk is left behind). |
 | `Service`s | ClusterIP for backend and frontend, headless for Postgres. |
-| `Ingress` | `/api` → backend, `/` → frontend (Traefik). `/metrics`, `/health`, `/ready` are not exposed. |
+| `Ingress` | `/api` → backend, `/` → frontend (Traefik). `/metrics` and `/ready` are not exposed (they fall through to the frontend's `index.html`); `/health` is proxied to the backend by nginx. |
 | `HorizontalPodAutoscaler`, `PodDisruptionBudget`s | Scale the API on CPU; keep at least one pod of each component during node drains. |
 | `ServiceMonitor` | Prometheus scraping of `/metrics` (enabled with the monitoring stack). |
 
@@ -225,8 +225,28 @@ metrics-server is installed on EKS by Terraform as a managed add-on.
 ### Deploy a new version
 
 The pipeline tags images with the commit SHA. Set `image.tag` in `helm/gittogether/values.yaml` to that
-SHA and run `helm upgrade` (ArgoCD automates this in the GitOps setup). Roll back with
+SHA and run `helm upgrade` (or just push it and let ArgoCD sync, see below). Roll back with
 `helm rollback gittogether <revision> -n gittogether`.
+
+### GitOps with ArgoCD
+
+[`argocd/application.yaml`](argocd/application.yaml) makes ArgoCD deploy the chart straight from this repo
+(`main`, `helm/gittogether`, `values-eks.yaml`) with automated sync, pruning and self-healing, so git is the
+single source of truth: a manual `kubectl edit` is reverted, and a commit is rolled out by ArgoCD itself.
+
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd --server-side -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.5/manifests/install.yaml
+kubectl apply -f k8s/namespace.yaml           # namespace with Pod Security labels
+scripts/create-secrets.sh                     # DB password + JWT key, never in git
+kubectl apply -f argocd/application.yaml
+kubectl port-forward -n argocd svc/argocd-server 8081:443     # https://localhost:8081, user admin
+kubectl get secret -n argocd argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+```
+
+Release flow: CI builds and pushes `ghcr.io/ahmadanzar/gittogether/<component>:<commit SHA>`; you set
+`image.tag` in `helm/gittogether/values.yaml` to that SHA and push; ArgoCD notices and rolls it out.
+To roll back, revert the commit. On the local kind cluster, change `valueFiles` to `values-kind.yaml`.
 
 ### Troubleshooting lab
 
@@ -235,8 +255,24 @@ whose selector matches nothing) with the commands to diagnose and fix them in th
 
 ## Observability
 
-*In progress (Phase 8):* kube-prometheus-stack scraping the backend's `/metrics` through a
-ServiceMonitor, and a Grafana dashboard for request rate, latency and error rate.
+The backend exposes Prometheus metrics at `/metrics` (request counts, latency histograms and sizes per
+endpoint, via `prometheus-fastapi-instrumentator`). [`kube-prometheus-stack`](monitoring/prometheus-values.yaml)
+runs Prometheus and Grafana in the cluster, and the chart's `ServiceMonitor` tells Prometheus to scrape
+every backend pod (enabled in `values-kind.yaml` / `values-eks.yaml`). The ServiceMonitor needs the stack's
+CRDs, so install monitoring **before** the app (ArgoCD simply retries until they exist). One script does it:
+
+```bash
+scripts/install-monitoring.sh
+kubectl port-forward -n monitoring svc/monitoring-kube-prometheus-prometheus 9090   # Status -> Targets
+kubectl port-forward -n monitoring svc/monitoring-grafana 3001:80                   # http://localhost:3001, user admin
+kubectl get secret -n monitoring monitoring-grafana -o jsonpath='{.data.admin-password}' | base64 -d
+```
+
+In Prometheus, **Status -> Targets** shows both backend pods as `UP`. In Grafana, the **GitTogether API**
+dashboard ([`monitoring/dashboards/gittogether-api.json`](monitoring/dashboards/gittogether-api.json)) is
+imported automatically (the script stores it in a ConfigMap labelled `grafana_dashboard=1`, which Grafana's
+sidecar watches). It shows backend pods up, requests per second, 5xx error ratio, p95 latency (overall and
+per endpoint), responses by status class and backend CPU. `scripts/load-test.sh` generates traffic.
 
 ## Known limitations
 

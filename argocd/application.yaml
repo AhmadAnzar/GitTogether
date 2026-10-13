@@ -1,0 +1,43 @@
+# GitOps: ArgoCD watches this repo and keeps the cluster equal to what git says.
+# Deploying a new version = commit a new image SHA to helm/gittogether/values.yaml; ArgoCD syncs it.
+#
+# Bootstrap (once per cluster, see README "GitOps with ArgoCD"):
+#   kubectl apply -f k8s/namespace.yaml      # namespace with the Pod Security labels
+#   scripts/create-secrets.sh                # Secret with the DB password and JWT key (never in git)
+#   kubectl apply -f argocd/application.yaml
+#
+# valueFiles below targets EKS. For the local kind cluster use values-kind.yaml instead.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gittogether
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io # deleting the Application also deletes what it deployed
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/AhmadAnzar/GitTogether.git
+    targetRevision: main
+    path: helm/gittogether
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-eks.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: gittogether
+  syncPolicy:
+    automated:
+      prune: true # resources removed from git are removed from the cluster
+      selfHeal: true # manual `kubectl edit` changes are reverted to the git state
+    syncOptions:
+      # The chart's ServiceMonitor needs the Prometheus Operator CRDs. Without this option the first
+      # sync fails when monitoring isn't installed yet; with it, ArgoCD applies the rest and retries.
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
