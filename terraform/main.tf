@@ -71,8 +71,15 @@ module "eks" {
     kube-proxy             = {}
     coredns                = {}
     eks-pod-identity-agent = {}
-    aws-ebs-csi-driver     = {} # PersistentVolumes for PostgreSQL
-    metrics-server         = {} # CPU metrics for the HorizontalPodAutoscaler
+    # PersistentVolumes for PostgreSQL. The driver gets its own IAM role through EKS Pod Identity: pods
+    # cannot use the node role (the node metadata service is not reachable from pods on current EKS AMIs).
+    aws-ebs-csi-driver = {
+      pod_identity_association = [{
+        role_arn        = aws_iam_role.ebs_csi.arn
+        service_account = "ebs-csi-controller-sa"
+      }]
+    }
+    metrics-server = {} # CPU metrics for the HorizontalPodAutoscaler
   }
 
   eks_managed_node_groups = {
@@ -84,11 +91,25 @@ module "eks" {
       min_size     = 2
       max_size     = var.node_max_size
       desired_size = var.node_desired_size
-
-      # The EBS CSI driver runs on the nodes and uses their role to create volumes.
-      iam_role_additional_policies = {
-        ebs_csi = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
-      }
     }
   }
+}
+
+# IAM role for the EBS CSI driver (EKS Pod Identity). Only the driver's service account can assume it.
+resource "aws_iam_role" "ebs_csi" {
+  name = "${var.cluster_name}-ebs-csi"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "pods.eks.amazonaws.com" }
+      Action    = ["sts:AssumeRole", "sts:TagSession"]
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi" {
+  role       = aws_iam_role.ebs_csi.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
