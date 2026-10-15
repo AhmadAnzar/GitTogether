@@ -28,7 +28,7 @@ AWS (Terraform)                                   Kubernetes (Helm)
 │ VPC 10.20.0.0/16, 2 AZs               │        │ Ingress  /     ──► frontend (nginx, React) │
 │  public subnets:  load balancer, NAT  │ ─────► │          /api  ──► backend  (FastAPI)      │
 │  private subnets: EKS worker nodes    │        │                       │                    │
-│ EKS 1.36, 2 × m7i-flex.large, KMS secrets  │        │                   PostgreSQL (PVC)         │
+│ EKS 1.35, 2 × m7i-flex.large, KMS secrets  │        │                   PostgreSQL (PVC)         │
 └───────────────────────────────────────┘        │ HPA on backend · Prometheus + Grafana      │
                                                  └───────────────────────────────────────────┘
 ```
@@ -153,7 +153,7 @@ tags were rewritten upstream in 2026.
 ## Infrastructure (Terraform)
 
 See [`terraform/README.md`](terraform/README.md). Summary: a VPC with 2 public and 2 private subnets
-across two AZs, one NAT gateway, and an EKS 1.36 cluster (standard support, KMS-encrypted Secrets) with
+across two AZs, one NAT gateway, and an EKS 1.35 cluster (standard support, KMS-encrypted Secrets) with
 a managed node group of 2 × `m7i-flex.large` in the private subnets. Cost while running is about $0.40/hour,
 so the cluster is created for demos and destroyed the same day.
 
@@ -234,15 +234,38 @@ SHA and run `helm upgrade` (or just push it and let ArgoCD sync, see below). Rol
 (`main`, `helm/gittogether`, `values-eks.yaml`) with automated sync, pruning and self-healing, so git is the
 single source of truth: a manual `kubectl edit` is reverted, and a commit is rolled out by ArgoCD itself.
 
+On EKS use the script, which installs ArgoCD and the Application in the right order (see the note below):
+
+```bash
+scripts/install-argocd-eks.sh
+```
+
+On the local kind cluster the plain steps are enough:
+
 ```bash
 kubectl create namespace argocd
 kubectl apply -n argocd --server-side -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.5/manifests/install.yaml
 kubectl apply -f k8s/namespace.yaml           # namespace with Pod Security labels
 scripts/create-secrets.sh                     # DB password + JWT key, never in git
 kubectl apply -f argocd/application.yaml
+```
+
+Then open the UI:
+
+```bash
 kubectl port-forward -n argocd svc/argocd-server 8081:443     # https://localhost:8081, user admin
 kubectl get secret -n argocd argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
 ```
+
+> **Known issue on EKS 1.35 / 1.36.** With a fresh, empty cluster the API server returns `503` for the protobuf
+> OpenAPI schema (`/openapi/v2`) while the aggregated APIs `v1.metrics.eks.amazonaws.com` (EKS-managed) or
+> `v1beta1.metrics.k8s.io` (metrics-server) are registered; the same schema is served fine as JSON. ArgoCD needs
+> it, so the Application stays `Unknown` ("failed to load open api schema … unable to handle the request").
+> Unregistering **both** APIs makes it work immediately (removing only one does not), which is what
+> `scripts/install-argocd-eks.sh` does before registering metrics-server's API again. I reproduced it on both
+> versions and did not find the root cause; a similar EKS-side OpenAPI problem was reported in
+> [argo-cd#25976](https://github.com/argoproj/argo-cd/issues/25976) and fixed by AWS. Side effect: ArgoCD's live
+> watch is blind afterwards, so it notices drift on its periodic refresh (up to 3 minutes) rather than at once.
 
 Release flow: CI builds and pushes `ghcr.io/ahmadanzar/gittogether/<component>:<commit SHA>`; you set
 `image.tag` in `helm/gittogether/values.yaml` to that SHA and push; ArgoCD notices and rolls it out.

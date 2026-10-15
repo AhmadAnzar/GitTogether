@@ -1,0 +1,17 @@
+# Registers metrics-server's API (metrics.k8s.io) with the Kubernetes API server again.
+# scripts/install-argocd-eks.sh removes it while ArgoCD loads the cluster schema and applies this afterwards;
+# the HorizontalPodAutoscaler and `kubectl top` need it. insecureSkipTLSVerify is acceptable for a throwaway
+# demo cluster; the EKS add-on's own entry pins the add-on's CA instead.
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1beta1.metrics.k8s.io
+spec:
+  group: metrics.k8s.io
+  version: v1beta1
+  groupPriorityMinimum: 100
+  versionPriority: 100
+  insecureSkipTLSVerify: true
+  service:
+    name: metrics-server
+    namespace: kube-system
