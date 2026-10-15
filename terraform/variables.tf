@@ -31,17 +31,17 @@ variable "vpc_cidr" {
 variable "node_instance_type" {
   description = "EC2 instance type for the worker nodes."
   type        = string
-  default     = "t3.medium"
+  default     = "m7i-flex.large"
 }
 
 variable "node_desired_size" {
-  description = "Number of worker nodes. 3 x t3.medium = 51 pod slots (17 each), enough for the app, monitoring and ArgoCD."
+  description = "Number of worker nodes. 2 x m7i-flex.large = 58 pod slots (29 each) and 16 GiB RAM; the free plan allows only a few instance types and 5 vCPUs in total, so 2 nodes is the maximum."
   type        = number
-  default     = 3
+  default     = 2
 }
 
 variable "node_max_size" {
   description = "Upper bound for the node group."
   type        = number
-  default     = 4
+  default     = 2
 }

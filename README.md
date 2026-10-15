@@ -28,7 +28,7 @@ AWS (Terraform)                                   Kubernetes (Helm)
 │ VPC 10.20.0.0/16, 2 AZs               │        │ Ingress  /     ──► frontend (nginx, React) │
 │  public subnets:  load balancer, NAT  │ ─────► │          /api  ──► backend  (FastAPI)      │
 │  private subnets: EKS worker nodes    │        │                       │                    │
-│ EKS 1.36, 3 × t3.medium, KMS secrets  │        │                   PostgreSQL (PVC)         │
+│ EKS 1.36, 2 × m7i-flex.large, KMS secrets  │        │                   PostgreSQL (PVC)         │
 └───────────────────────────────────────┘        │ HPA on backend · Prometheus + Grafana      │
                                                  └───────────────────────────────────────────┘
 ```
@@ -154,7 +154,7 @@ tags were rewritten upstream in 2026.
 
 See [`terraform/README.md`](terraform/README.md). Summary: a VPC with 2 public and 2 private subnets
 across two AZs, one NAT gateway, and an EKS 1.36 cluster (standard support, KMS-encrypted Secrets) with
-a managed node group of 3 × `t3.medium` in the private subnets. Cost while running is about $0.35/hour,
+a managed node group of 2 × `m7i-flex.large` in the private subnets. Cost while running is about $0.40/hour,
 so the cluster is created for demos and destroyed the same day.
 
 ```bash
