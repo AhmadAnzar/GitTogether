@@ -5,7 +5,7 @@ Provisions, in `ap-south-1` (Mumbai):
 | Resource | Details |
 |---|---|
 | VPC | `10.20.0.0/16` across two AZs: 2 public subnets (load balancer, NAT), 2 private subnets (worker nodes), internet gateway, 1 NAT gateway |
-| EKS cluster | Kubernetes 1.36, pinned to **standard** support, Secrets encrypted with KMS |
+| EKS cluster | Kubernetes 1.35, pinned to **standard** support, Secrets encrypted with KMS |
 | Managed node group | 2 × `m7i-flex.large` on-demand (min 2, max 2) in private subnets, Amazon Linux 2023 |
 | EKS add-ons | vpc-cni, kube-proxy, coredns, pod-identity-agent, aws-ebs-csi-driver, metrics-server |
 

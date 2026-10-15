@@ -19,7 +19,7 @@ variable "cluster_name" {
 variable "kubernetes_version" {
   description = "EKS Kubernetes version. Keep it in STANDARD support: extended support costs 6x more per hour."
   type        = string
-  default     = "1.36"
+  default     = "1.35"
 }
 
 variable "vpc_cidr" {
