@@ -1,9 +1,22 @@
 # GitTogether
 
-This repository is also a **DevOps capstone**: it takes the app from a laptop to a monitored Kubernetes
-cluster on AWS, with tests, security scanning and infrastructure as code at every step.
+GitTogether is a small web app where students find teammates for projects and hackathons. You make a
+profile with your skills, department and availability, browse other students, and send connection
+requests. You can also upload a resume.
+
+This repository is also my **DevOps capstone**. It takes the app from a laptop to a Kubernetes cluster on
+AWS, with tests, security scanning, Terraform, GitOps and monitoring along the way. The screenshots below
+come from a real run on Amazon EKS.
 
 ![CI/CD](https://github.com/AhmadAnzar/GitTogether/actions/workflows/gittogether-ci.yml/badge.svg)
+
+![The app running on EKS behind an AWS load balancer](demo/screenshots/firstlook.png)
+
+| Profile page | Connections |
+|---|---|
+| ![A student profile](demo/screenshots/profile.png) | ![Connection requests](demo/screenshots/connections.png) |
+
+Slides and the walkthrough script are in [`demo/`](demo/).
 
 ---
 
@@ -130,8 +143,15 @@ push and pull request to `main` (docs-only changes are skipped), and manually vi
    push to `ghcr.io/ahmadanzar/gittogether/{backend,frontend}` tagged with the full commit SHA.
    Pull requests run everything except the push.
 
-Third-party actions are referenced by version; the Trivy action is pinned to a commit SHA because its
-tags were rewritten upstream in 2026.
+Third-party actions are pinned to full commit SHAs (the version is in a comment next to each one), and
+Dependabot opens pull requests to update them. The Trivy action had its tags rewritten upstream in 2026,
+which is why I pin by SHA.
+
+A green run, and the summary of the image jobs:
+
+![A green pipeline run](demo/screenshots/green-run.png)
+
+![Pipeline summary](demo/screenshots/pipeline-summary.png)
 
 ## Security
 
@@ -141,6 +161,10 @@ tags were rewritten upstream in 2026.
   Starlette (e.g. CVE-2025-62727, a denial of service via crafted HTTP `Range` headers) and 41 issues in
   the old `nginx 1.27` / Alpine 3.21 base image; upgrading FastAPI/Starlette and moving to
   `nginx-unprivileged:1.30-alpine` (plus `apk upgrade`) brought both images to zero.
+
+  | Backend image | Frontend image |
+  |---|---|
+  | ![Trivy scan of the backend image](demo/screenshots/trivy-be.png) | ![Trivy scan of the frontend image](demo/screenshots/trivy-fe.png) |
 - **Trivy config scanning** checks Terraform, Dockerfiles and Kubernetes manifests. Deliberate trade-offs
   (public EKS endpoint, open node egress, no paid CloudWatch/flow logs) are listed with reasons in
   [`.trivyignore`](.trivyignore).
@@ -163,6 +187,24 @@ terraform init && terraform plan
 terraform apply
 aws eks update-kubeconfig --region ap-south-1 --name gittogether-eks
 ```
+
+The AWS free plan only allows a few instance types and 5 vCPUs in total (`t3.medium` was rejected), which
+is why the nodes are `m7i-flex.large`. The EBS driver gets its AWS permissions through EKS Pod Identity,
+because pods on current EKS nodes cannot use the node's metadata credentials.
+
+What it looked like:
+
+| `terraform apply` finished | `terraform destroy` finished |
+|---|---|
+| ![terraform apply output](demo/screenshots/tf-apply.png) | ![terraform destroy output](demo/screenshots/tf-destroy.png) |
+
+![The VPC in the AWS console](demo/screenshots/aws-vpc.png)
+
+![The subnets in the AWS console](demo/screenshots/aws-subnet.png)
+
+![The EKS cluster in the AWS console](demo/screenshots/aws-eks-overview.png)
+
+![The two worker nodes](demo/screenshots/aws-eks-compute.png)
 
 ## Kubernetes / Helm
 
@@ -222,6 +264,32 @@ kubectl get svc -n traefik traefik      # EXTERNAL-IP = the AWS load balancer ho
 `values-eks.yaml` also creates a default `gp3` StorageClass (new EKS clusters have none).
 metrics-server is installed on EKS by Terraform as a managed add-on.
 
+Nodes and pods on EKS:
+
+![kubectl get nodes](demo/screenshots/getnodes.png)
+
+Pods, services and the Helm release (from the first run, deployed with `helm` directly; later runs
+let ArgoCD deploy the same chart):
+
+![kubectl get pods, services and the helm release](demo/screenshots/kubectl-getpods.png)
+
+Checking the backend directly through a port-forward, and its Prometheus metrics:
+
+| `/health` | `/metrics` |
+|---|---|
+| ![Health endpoint](demo/screenshots/health_portforward.png) | ![Metrics endpoint](demo/screenshots/metrics.png) |
+
+### Autoscaling
+
+I ran `scripts/load-test.sh` against the load balancer. The backend CPU went to about 150% of the 70%
+target, and the HPA grew the backend from 2 to 5 pods. When the load stopped, CPU dropped back.
+
+![HPA during the load test](demo/screenshots/hpa-scaling.png)
+
+![The extra backend pods](demo/screenshots/hpa-pods.png)
+
+![The load test running](demo/screenshots/loadtest.png)
+
 ### Deploy a new version
 
 The pipeline tags images with the commit SHA. Set `image.tag` in `helm/gittogether/values.yaml` to that
@@ -257,15 +325,22 @@ kubectl port-forward -n argocd svc/argocd-server 8081:443     # https://localhos
 kubectl get secret -n argocd argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
 ```
 
-> **Known issue on EKS 1.35 / 1.36.** With a fresh, empty cluster the API server returns `503` for the protobuf
-> OpenAPI schema (`/openapi/v2`) while the aggregated APIs `v1.metrics.eks.amazonaws.com` (EKS-managed) or
-> `v1beta1.metrics.k8s.io` (metrics-server) are registered; the same schema is served fine as JSON. ArgoCD needs
-> it, so the Application stays `Unknown` ("failed to load open api schema … unable to handle the request").
-> Unregistering **both** APIs makes it work immediately (removing only one does not), which is what
-> `scripts/install-argocd-eks.sh` does before registering metrics-server's API again. I reproduced it on both
-> versions and did not find the root cause; a similar EKS-side OpenAPI problem was reported in
-> [argo-cd#25976](https://github.com/argoproj/argo-cd/issues/25976) and fixed by AWS. Side effect: ArgoCD's live
-> watch is blind afterwards, so it notices drift on its periodic refresh (up to 3 minutes) rather than at once.
+> **Known issue on EKS 1.35 and 1.36.** On a fresh, empty cluster the API server answers `503` when
+> asked for the OpenAPI schema in protobuf format (`/openapi/v2`), while the same schema works as JSON.
+> This happens while the two metrics APIs (`v1.metrics.eks.amazonaws.com` from EKS and
+> `v1beta1.metrics.k8s.io` from metrics-server) are registered. ArgoCD needs the schema, so the
+> Application stays `Unknown` with "failed to load open api schema ... unable to handle the request".
+> Removing both APIs fixes it (removing only one does not). `scripts/install-argocd-eks.sh` removes them,
+> waits for ArgoCD to sync, and registers metrics-server's API again so the HPA works. I saw the same thing
+> on 1.35 and 1.36 and did not find the root cause. A similar EKS problem was reported in
+> [argo-cd#25976](https://github.com/argoproj/argo-cd/issues/25976). One side effect: ArgoCD no longer sees
+> changes instantly, it notices drift at its next refresh (up to 3 minutes).
+
+ArgoCD showing the app as Synced and Healthy, and the resource tree:
+
+![ArgoCD application](demo/screenshots/argocd-synced.png)
+
+![ArgoCD resource tree](demo/screenshots/argocd-tree.png)
 
 Release flow: CI builds and pushes `ghcr.io/ahmadanzar/gittogether/<component>:<commit SHA>`; you set
 `image.tag` in `helm/gittogether/values.yaml` to that SHA and push; ArgoCD notices and rolls it out.
@@ -296,6 +371,12 @@ dashboard ([`monitoring/dashboards/gittogether-api.json`](monitoring/dashboards/
 imported automatically (the script stores it in a ConfigMap labelled `grafana_dashboard=1`, which Grafana's
 sidecar watches). It shows backend pods up, requests per second, 5xx error ratio, p95 latency (overall and
 per endpoint), responses by status class and backend CPU. `scripts/load-test.sh` generates traffic.
+
+Prometheus targets (both backend pods are `UP`) and the Grafana dashboard during the load test:
+
+![Prometheus targets](demo/screenshots/prometheus.png)
+
+![Grafana dashboard](demo/screenshots/grafana.png)
 
 ## Known limitations
 
