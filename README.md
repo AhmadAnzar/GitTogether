@@ -16,7 +16,22 @@ come from a real run on Amazon EKS.
 |---|---|
 | ![A student profile](demo/screenshots/profile.png) | ![Connection requests](demo/screenshots/connections.png) |
 
-Slides and the walkthrough script are in [`demo/`](demo/).
+The slides are in [`demo/`](demo/) as `slides.pdf` and `slides.pptx`.
+
+## Where to find each part
+
+| Module | What | Section in this README | Proof |
+|---|---|---|---|
+| M1 | App: React, FastAPI, Postgres | [Architecture](#architecture), [API](#api) | [app](demo/screenshots/firstlook.png), [profile](demo/screenshots/profile.png) |
+| M2 | Tests and lint | [Tests and linting](#tests-and-linting) | [pytest](demo/screenshots/pytest.png) |
+| M3 | Git history | [Repository layout](#repository-layout) | [commits](demo/screenshots/commits.png) |
+| M4 | Docker and Compose | [Run locally](#run-locally) | [compose](demo/screenshots/compose-up.png) |
+| M5 | CI/CD pipeline | [CI/CD pipeline](#cicd-pipeline) | [green run](demo/screenshots/green-run.png), [GHCR images](demo/screenshots/ghcr-backend.png) |
+| M6 | Trivy scan | [Security](#security) | [backend](demo/screenshots/trivy-be.png), [frontend](demo/screenshots/trivy-fe.png) |
+| M7 | Terraform on AWS | [Infrastructure (Terraform)](#infrastructure-terraform) | [plan](demo/screenshots/tf-plan.png), [apply](demo/screenshots/tf-apply.png), [VPC](demo/screenshots/aws-vpc.png), [EKS](demo/screenshots/aws-eks-overview.png), [destroy](demo/screenshots/tf-destroy.png) |
+| M8 | Kubernetes, Helm, ArgoCD, HPA | [Kubernetes / Helm](#kubernetes--helm) | [pods](demo/screenshots/kubectl-getpods.png), [ArgoCD](demo/screenshots/argocd-synced.png), [HPA](demo/screenshots/hpa-scaling.png), [troubleshooting](troubleshooting/README.md) |
+| M9 | Prometheus and Grafana | [Observability](#observability) | [Prometheus](demo/screenshots/prometheus.png), [Grafana](demo/screenshots/grafana.png) |
+| M10 | Slides and docs | this README, [`demo/`](demo/) | [slides.pdf](demo/slides.pdf) |
 
 ---
 
