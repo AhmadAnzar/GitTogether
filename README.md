@@ -4,9 +4,9 @@ GitTogether is a small web app where students find teammates for projects and ha
 profile with your skills, department and availability, browse other students, and send connection
 requests. You can also upload a resume.
 
-This repository is also my **DevOps capstone**. It takes the app from a laptop to a Kubernetes cluster on
-AWS, with tests, security scanning, Terraform, GitOps and monitoring along the way. The screenshots below
-come from a real run on Amazon EKS.
+This repository is also my **DevOps capstone**. It takes the app from my laptop to a Kubernetes cluster on
+AWS, with tests, security scanning, Terraform, GitOps and monitoring on the way. The cluster screenshots
+below come from a real run on Amazon EKS.
 
 ![CI/CD](https://github.com/AhmadAnzar/GitTogether/actions/workflows/gittogether-ci.yml/badge.svg)
 
@@ -36,9 +36,9 @@ The slides are in [`demo/`](demo/) as `slides.pdf` and `slides.pptx`. The demo v
 
 ## Project walkthrough
 
-The demo video follows the slides with a live run on EKS. This section is the same walkthrough in
-writing, with the commands I ran and the screenshots of the results, so each step can be checked
-without watching the video. Every screenshot here comes from the real cluster.
+The demo video goes through the slides. The live part, what I ran on the EKS cluster, is written up
+in this section instead, with the commands I used and screenshots of the results. The screenshots
+here are from the real cluster.
 
 ### 1. Codebase
 
@@ -78,7 +78,7 @@ any earlier job fails, nothing is pushed.
 [the image jobs](demo/screenshots/pipeline-summary.png), [the images in GHCR](demo/screenshots/ghcr-backend.png).
 
 A live push: I added one comment line to `scripts/load-test.sh` and pushed it to `main`
-(commit `483a90b`). The pipeline started by itself and all 8 jobs passed in about 2 minutes
+(commit `483a90b`). The pipeline started by itself and every job passed in about 2 minutes
 ([the run](https://github.com/AhmadAnzar/GitTogether/actions/runs/38929955524)):
 
 ![Pipeline run for the live push](demo/screenshots/live-push-green.png)
@@ -170,7 +170,7 @@ AWS (Terraform)                                   Kubernetes (Helm)
 │ VPC 10.20.0.0/16, 2 AZs               │        │ Ingress  /     ──► frontend (nginx, React) │
 │  public subnets:  load balancer, NAT  │ ─────► │          /api  ──► backend  (FastAPI)      │
 │  private subnets: EKS worker nodes    │        │                       │                    │
-│ EKS 1.35, 2 × m7i-flex.large, KMS secrets  │        │                   PostgreSQL (PVC)         │
+│ EKS 1.35, 2 × m7i-flex.large          │        │                   PostgreSQL (PVC)         │
 └───────────────────────────────────────┘        │ HPA on backend · Prometheus + Grafana      │
                                                  └───────────────────────────────────────────┘
 ```
@@ -193,12 +193,17 @@ AWS (Terraform)                                   Kubernetes (Helm)
 ## Repository layout
 
 ```text
-.github/workflows/   CI/CD pipeline        backend/      FastAPI app, Alembic migrations, tests
-.github/dependabot.yml                     frontend/     React app, Nginx config, tests
-terraform/           AWS VPC + EKS          helm/         Helm chart for the app
-k8s/                 namespace, kind/EKS add-on values   monitoring/   Prometheus/Grafana values
-scripts/             load-test helper       troubleshooting/  deliberately broken manifests (lab)
-demo/                screenshots, slides, demo video
+backend/           FastAPI app, Alembic migrations, tests
+frontend/          React app, Nginx config, tests
+terraform/         AWS VPC and EKS
+helm/              Helm chart for the app
+argocd/            ArgoCD Application
+k8s/               namespace, kind and EKS add-on values
+monitoring/        Prometheus and Grafana values, dashboard
+scripts/           install, secrets and load-test scripts
+troubleshooting/   two broken manifests and how I fixed them
+demo/              screenshots and slides
+.github/           CI/CD pipeline and Dependabot config
 ```
 
 ## API
@@ -234,8 +239,9 @@ deletes it). Accepted connections are mutual.
 
 **Privacy rule:** a `LIMITED` profile's skills, LinkedIn and resume are visible only to its owner and
 their connections. The API removes those fields before responding, so the data never reaches anyone
-else's browser, and hidden skills are excluded from skill search. Interactive docs:
-`http://localhost:8000/docs`.
+else's browser, and hidden skills are left out of skill search.
+
+FastAPI also generates interactive API docs (Swagger UI) at `http://localhost:8000/docs`:
 
 ![Swagger UI at /docs](demo/screenshots/swagger.png)
 
@@ -274,20 +280,24 @@ coverage, and the pipeline fails below 90%:
 
 ## CI/CD pipeline
 
-Defined in [`.github/workflows/gittogether-ci.yml`](.github/workflows/gittogether-ci.yml). Runs on every
-push and pull request to `main` (docs-only changes are skipped), and manually via **Run workflow**.
+The workflow is [`.github/workflows/gittogether-ci.yml`](.github/workflows/gittogether-ci.yml). It runs on
+every push and pull request to `main` (changes to docs only are skipped), and I can also start it by hand
+with **Run workflow**.
 
-1. **Stage 1, in parallel:** gitleaks secret scan of the full history · backend ruff + pytest (fails
-   below 90% coverage) · frontend ESLint + Vitest + build · Terraform fmt + validate · Helm lint + kubeconform
-   schema validation of the rendered manifests · Trivy config scan
-   of Dockerfiles, Kubernetes and Terraform (report-only, published to the Security tab).
-2. **Stage 2, per image:** Docker build → **Trivy image scan that fails on fixable HIGH/CRITICAL CVEs** →
-   push to `ghcr.io/ahmadanzar/gittogether/{backend,frontend}` tagged with the full commit SHA.
-   Pull requests run everything except the push.
+1. **First, these run at the same time:**
+   - gitleaks scans the whole git history for secrets
+   - backend: ruff and pytest, failing below 90% coverage
+   - frontend: ESLint, Vitest and the build
+   - Terraform: `fmt` and `validate`
+   - Helm: lint, then kubeconform checks the rendered manifests
+   - Trivy scans the Dockerfiles, Kubernetes and Terraform files (report only, shown in the Security tab)
+2. **Then, for each image:** Docker build, a Trivy scan that fails on fixable HIGH or CRITICAL
+   problems, and a push to `ghcr.io/ahmadanzar/gittogether/{backend,frontend}` tagged with the full commit
+   SHA. Pull requests run everything except the push.
 
-Third-party actions are pinned to full commit SHAs (the version is in a comment next to each one), and
-Dependabot opens pull requests to update them. The Trivy action had its tags rewritten upstream in 2026,
-which is why I pin by SHA.
+Third-party actions are pinned to full commit SHAs, with the version in a comment next to each one.
+Dependabot opens pull requests to update them. I pin by SHA because the tags of the Trivy action were
+rewritten upstream in 2026.
 
 A green run ([open it on GitHub](https://github.com/AhmadAnzar/GitTogether/actions/runs/38716349963)),
 and the summary of the image jobs:
@@ -308,24 +318,25 @@ The commit history on `main`:
 
 ## Security
 
-- **Trivy image scanning.** Trivy scans each built image's OS packages (Debian / Alpine) and application
-  libraries (Python packages, npm) against vulnerability databases, and the pipeline fails if any
-  HIGH or CRITICAL issue with an available fix is found. Its first run caught three HIGH CVEs in
-  Starlette (e.g. CVE-2025-62727, a denial of service via crafted HTTP `Range` headers) and 41 issues in
-  the old `nginx 1.27` / Alpine 3.21 base image; upgrading FastAPI/Starlette and moving to
-  `nginx-unprivileged:1.30-alpine` (plus `apk upgrade`) brought both images to zero.
+- **Trivy image scanning.** Trivy checks each image's operating system packages (Debian or Alpine) and
+  its libraries (Python and npm) against known vulnerabilities. The pipeline fails if it finds a HIGH or
+  CRITICAL one that already has a fix. On its first run it found three HIGH problems in Starlette
+  (for example CVE-2025-62727, where specially crafted `Range` headers can be used for a denial of
+  service) and 41 in the old `nginx 1.27` / Alpine 3.21 base image. I upgraded FastAPI, which brought a
+  newer Starlette, and moved to `nginx-unprivileged:1.30-alpine` (plus `apk upgrade`). After that both
+  images scanned clean.
 
   | Backend image | Frontend image |
   |---|---|
   | ![Trivy scan of the backend image](demo/screenshots/trivy-be.png) | ![Trivy scan of the frontend image](demo/screenshots/trivy-fe.png) |
-- **Trivy config scanning** checks Terraform, Dockerfiles and Kubernetes manifests. Deliberate trade-offs
-  (public EKS endpoint, open node egress, no paid CloudWatch/flow logs) are listed with reasons in
-  [`.trivyignore`](.trivyignore).
-- **gitleaks** fails the pipeline if a secret appears anywhere in the git history.
-- **Containers** run as non-root users (backend uid 10001, frontend uid 101); Nginx sends a strict
-  Content-Security-Policy and other security headers and hides its version.
-- **No credentials in git:** `.env`, `*.tfvars` and Terraform state are gitignored; AWS credentials come
-  from the local AWS CLI profile.
+- **Trivy config scanning** checks the Terraform, Dockerfiles and Kubernetes files. A few findings I
+  accepted on purpose (public EKS endpoint, open node egress, no paid CloudWatch or flow logs) are listed
+  with the reason in [`.trivyignore`](.trivyignore).
+- **gitleaks** fails the pipeline if a secret shows up anywhere in the git history.
+- **Containers** run as non-root users (backend uid 10001, frontend uid 101). Nginx sends a strict
+  Content-Security-Policy and other security headers, and hides its version.
+- **No credentials in git.** `.env`, `*.tfvars` and the Terraform state are gitignored, and AWS
+  credentials come from the local AWS CLI profile.
 
 ## Infrastructure (Terraform)
 
@@ -373,15 +384,15 @@ The app is packaged as a Helm chart in [`helm/gittogether`](helm/gittogether):
 | `HorizontalPodAutoscaler`, `PodDisruptionBudget`s | Scale the API on CPU; keep at least one pod of each component during node drains. |
 | `ServiceMonitor` | Prometheus scraping of `/metrics` (enabled with the monitoring stack). |
 
-**Security:** the `gittogether` namespace enforces the Kubernetes **restricted** Pod Security level, so
-every pod must run as non-root, with a read-only root filesystem, no privilege escalation, all Linux
-capabilities dropped and the RuntimeDefault seccomp profile; anything else is rejected at admission.
-Passwords and the JWT key are **not in git or in values files**: `scripts/create-secrets.sh` creates
-a Kubernetes Secret with random values, which the chart references.
+**Security:** the `gittogether` namespace enforces the Kubernetes **restricted** Pod Security level. A pod
+is only admitted if it runs as non-root, has a read-only root filesystem, cannot escalate privileges,
+drops all Linux capabilities and uses the RuntimeDefault seccomp profile. The passwords and the JWT key
+are **not in git or in the values files**. `scripts/create-secrets.sh` creates a Kubernetes Secret with
+random values, and the chart refers to it.
 
-**Ingress controller:** Traefik. The previously common ingress-nginx project was retired by the
-Kubernetes project in March 2026 and no longer receives security fixes; Traefik implements the same
-standard `Ingress` resource.
+**Ingress controller:** I used Traefik. The popular ingress-nginx project was retired by the Kubernetes
+project in March 2026 and no longer gets security fixes. Traefik works with the same standard `Ingress`
+resource.
 
 ### Run it on a local cluster (kind)
 
@@ -452,10 +463,10 @@ SHA and run `helm upgrade` (or just push it and let ArgoCD sync, see below). Rol
 ### GitOps with ArgoCD
 
 [`argocd/application.yaml`](argocd/application.yaml) makes ArgoCD deploy the chart straight from this repo
-(`main`, `helm/gittogether`, `values-eks.yaml`) with automated sync, pruning and self-healing, so git is the
-single source of truth: a manual `kubectl edit` is reverted, and a commit is rolled out by ArgoCD itself.
+(`main`, `helm/gittogether`, `values-eks.yaml`) with automated sync, pruning and self-healing. Git decides
+what runs: a manual `kubectl edit` is undone, and a new commit is rolled out by ArgoCD itself.
 
-On EKS use the script, which installs ArgoCD and the Application in the right order (see the note below):
+On EKS use the script. It installs ArgoCD and the Application in the right order (see the note below):
 
 ```bash
 scripts/install-argocd-eks.sh
@@ -479,15 +490,16 @@ kubectl get secret -n argocd argocd-initial-admin-secret -o jsonpath='{.data.pas
 ```
 
 > **Known issue on EKS 1.35 and 1.36.** On a fresh, empty cluster the API server answers `503` when
-> asked for the OpenAPI schema in protobuf format (`/openapi/v2`), while the same schema works as JSON.
-> This happens while the two metrics APIs (`v1.metrics.eks.amazonaws.com` from EKS and
-> `v1beta1.metrics.k8s.io` from metrics-server) are registered. ArgoCD needs the schema, so the
-> Application stays `Unknown` with "failed to load open api schema ... unable to handle the request".
-> Removing both APIs fixes it (removing only one does not). `scripts/install-argocd-eks.sh` removes them,
-> waits for ArgoCD to sync, and registers metrics-server's API again so the HPA works. I saw the same thing
-> on 1.35 and 1.36 and did not find the root cause. A similar EKS problem was reported in
-> [argo-cd#25976](https://github.com/argoproj/argo-cd/issues/25976). One side effect: ArgoCD no longer sees
-> changes instantly, it notices drift at its next refresh (up to 3 minutes).
+> asked for the OpenAPI schema in protobuf format (`/openapi/v2`), although the same schema works as JSON.
+> This happens while two metrics APIs are registered: `v1.metrics.eks.amazonaws.com` (from EKS) and
+> `v1beta1.metrics.k8s.io` (from metrics-server). ArgoCD needs that schema, so the Application stays
+> `Unknown` with the error "failed to load open api schema ... unable to handle the request".
+> Removing both APIs fixes it; removing only one does not. `scripts/install-argocd-eks.sh` removes them,
+> waits for ArgoCD to sync, and then registers the metrics-server API again so the HPA keeps working.
+> I saw the same thing on 1.35 and 1.36 and did not find the root cause. A similar EKS problem was
+> reported in [argo-cd#25976](https://github.com/argoproj/argo-cd/issues/25976). One possible side effect:
+> ArgoCD may notice drift only at its next refresh (up to 3 minutes). In the last run the self-heal
+> test below reacted within a second, so this did not always happen.
 
 ArgoCD showing the app as Synced and Healthy, and the resource tree:
 
@@ -512,11 +524,12 @@ and by comparing labels, and fixed them. The full steps with screenshots are in
 
 ## Observability
 
-The backend exposes Prometheus metrics at `/metrics` (request counts, latency histograms and sizes per
-endpoint, via `prometheus-fastapi-instrumentator`). [`kube-prometheus-stack`](monitoring/prometheus-values.yaml)
-runs Prometheus and Grafana in the cluster, and the chart's `ServiceMonitor` tells Prometheus to scrape
-every backend pod (enabled in `values-kind.yaml` / `values-eks.yaml`). The ServiceMonitor needs the stack's
-CRDs, so install monitoring **before** the app (ArgoCD simply retries until they exist). One script does it:
+The backend exposes Prometheus metrics at `/metrics` (request counts, latency and sizes per endpoint,
+using `prometheus-fastapi-instrumentator`). [`kube-prometheus-stack`](monitoring/prometheus-values.yaml)
+runs Prometheus and Grafana in the cluster. The chart's `ServiceMonitor` tells Prometheus to scrape every
+backend pod (it is switched on in `values-kind.yaml` and `values-eks.yaml`). The ServiceMonitor needs the
+stack's CRDs, so install monitoring **before** the app (ArgoCD just retries until they exist). One script
+does it:
 
 ```bash
 scripts/install-monitoring.sh
@@ -526,10 +539,11 @@ kubectl get secret -n monitoring monitoring-grafana -o jsonpath='{.data.admin-pa
 ```
 
 In Prometheus, **Status -> Targets** shows both backend pods as `UP`. In Grafana, the **GitTogether API**
-dashboard ([`monitoring/dashboards/gittogether-api.json`](monitoring/dashboards/gittogether-api.json)) is
-imported automatically (the script stores it in a ConfigMap labelled `grafana_dashboard=1`, which Grafana's
-sidecar watches). It shows backend pods up, requests per second, 5xx error ratio, p95 latency (overall and
-per endpoint), responses by status class and backend CPU. `scripts/load-test.sh` generates traffic.
+dashboard ([`monitoring/dashboards/gittogether-api.json`](monitoring/dashboards/gittogether-api.json))
+is loaded automatically: the script puts it in a ConfigMap labelled `grafana_dashboard=1`, and Grafana's
+sidecar picks that up. The dashboard shows how many backend pods are up, requests per second, the share
+of 5xx errors, p95 latency (overall and per endpoint), responses by status class, and backend CPU.
+`scripts/load-test.sh` generates the traffic.
 
 Prometheus targets (both backend pods are `UP`) and the Grafana dashboard during the load test:
 
