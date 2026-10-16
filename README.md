@@ -16,8 +16,10 @@ below come from a real run on Amazon EKS.
 |---|---|
 | ![A student profile](demo/screenshots/profile.png) | ![Connection requests](demo/screenshots/connections.png) |
 
-The slides are in [`demo/`](demo/) as `slides.pdf` and `slides.pptx`. The demo video is a release asset:
-[watch or download it](https://github.com/AhmadAnzar/GitTogether/releases/tag/demo-video).
+The slides are in [`demo/`](demo/) as `slides.pdf` and `slides.pptx`. The demo video is
+[`demo/GitTogether-demo.mp4`](demo/GitTogether-demo.mp4). GitHub can't play it in the browser, so use the
+download button on that page. The same file is on the
+[releases page](https://github.com/AhmadAnzar/GitTogether/releases/tag/demo-video).
 
 ## Where to find each part
 
@@ -32,7 +34,7 @@ The slides are in [`demo/`](demo/) as `slides.pdf` and `slides.pptx`. The demo v
 | M7 | Terraform on AWS | [Infrastructure (Terraform)](#infrastructure-terraform) | [plan](demo/screenshots/tf-plan.png), [apply](demo/screenshots/tf-apply.png), [VPC](demo/screenshots/aws-vpc.png), [EKS](demo/screenshots/aws-eks-overview.png), [destroy](demo/screenshots/tf-destroy.png) |
 | M8 | Kubernetes, Helm, ArgoCD, HPA | [Kubernetes / Helm](#kubernetes--helm) | [pods](demo/screenshots/kubectl-getpods.png), [ArgoCD](demo/screenshots/argocd-synced.png), [HPA](demo/screenshots/hpa-scaling.png), [troubleshooting](troubleshooting/README.md) |
 | M9 | Prometheus and Grafana | [Observability](#observability) | [Prometheus](demo/screenshots/prometheus.png), [Grafana](demo/screenshots/grafana.png) |
-| M10 | Slides, video and docs | this README, [`demo/`](demo/) | [slides.pdf](demo/slides.pdf), [demo video](https://github.com/AhmadAnzar/GitTogether/releases/tag/demo-video) |
+| M10 | Slides, video and docs | this README, [`demo/`](demo/) | [slides.pdf](demo/slides.pdf), [demo video](demo/GitTogether-demo.mp4) |
 
 ## Project walkthrough
 
@@ -318,32 +320,31 @@ The commit history on `main`:
 
 ## Security
 
-- **Trivy image scanning.** Trivy checks each image's operating system packages (Debian or Alpine) and
-  its libraries (Python and npm) against known vulnerabilities. The pipeline fails if it finds a HIGH or
-  CRITICAL one that already has a fix. On its first run it found three HIGH problems in Starlette
-  (for example CVE-2025-62727, where specially crafted `Range` headers can be used for a denial of
-  service) and 41 in the old `nginx 1.27` / Alpine 3.21 base image. I upgraded FastAPI, which brought a
-  newer Starlette, and moved to `nginx-unprivileged:1.30-alpine` (plus `apk upgrade`). After that both
-  images scanned clean.
+- **Trivy image scan.** Trivy checks the packages inside each image (Debian or Alpine, Python, npm)
+  against lists of known vulnerabilities. The pipeline fails if it finds a HIGH or CRITICAL one that
+  already has a fix. My first scan found 3 HIGH problems in Starlette (for example CVE-2025-62727, where
+  crafted `Range` headers can be used for a denial of service) and 41 in the old `nginx 1.27` / Alpine 3.21
+  base image. I upgraded FastAPI, which pulled in a newer Starlette, and moved to
+  `nginx-unprivileged:1.30-alpine`. After that both images scanned clean.
 
   | Backend image | Frontend image |
   |---|---|
   | ![Trivy scan of the backend image](demo/screenshots/trivy-be.png) | ![Trivy scan of the frontend image](demo/screenshots/trivy-fe.png) |
-- **Trivy config scanning** checks the Terraform, Dockerfiles and Kubernetes files. A few findings I
-  accepted on purpose (public EKS endpoint, open node egress, no paid CloudWatch or flow logs) are listed
-  with the reason in [`.trivyignore`](.trivyignore).
-- **gitleaks** fails the pipeline if a secret shows up anywhere in the git history.
-- **Containers** run as non-root users (backend uid 10001, frontend uid 101). Nginx sends a strict
-  Content-Security-Policy and other security headers, and hides its version.
-- **No credentials in git.** `.env`, `*.tfvars` and the Terraform state are gitignored, and AWS
-  credentials come from the local AWS CLI profile.
+- **Trivy config scan** checks the Terraform, Dockerfiles and Kubernetes files. I accepted a few
+  findings on purpose (public EKS endpoint, open node egress, no paid CloudWatch logs). The reasons are in
+  [`.trivyignore`](.trivyignore).
+- **gitleaks** fails the pipeline if a secret appears anywhere in the git history.
+- **Containers** run as non-root users (backend uid 10001, frontend uid 101). Nginx also sends security
+  headers, including a strict Content-Security-Policy, and hides its version.
+- **No credentials in git.** `.env`, `*.tfvars` and the Terraform state are gitignored. AWS credentials
+  come from the local AWS CLI profile.
 
 ## Infrastructure (Terraform)
 
-See [`terraform/README.md`](terraform/README.md). Summary: a VPC with 2 public and 2 private subnets
-across two AZs, one NAT gateway, and an EKS 1.35 cluster (standard support, KMS-encrypted Secrets) with
-a managed node group of 2 × `m7i-flex.large` in the private subnets. Cost while running is about $0.40/hour,
-so the cluster is created for demos and destroyed the same day.
+See [`terraform/README.md`](terraform/README.md). In short: a VPC with 2 public and 2 private subnets in
+two availability zones, one NAT gateway, and an EKS 1.35 cluster whose Secrets are encrypted with KMS.
+The 2 worker nodes (`m7i-flex.large`) sit in the private subnets. It costs about $0.40 an hour while
+running, so I create it for the demo and destroy it the same day.
 
 ```bash
 cd terraform
@@ -352,9 +353,9 @@ terraform apply
 aws eks update-kubeconfig --region ap-south-1 --name gittogether-eks
 ```
 
-The AWS free plan only allows a few instance types and 5 vCPUs in total (`t3.medium` was rejected), which
-is why the nodes are `m7i-flex.large`. The EBS driver gets its AWS permissions through EKS Pod Identity,
-because pods on current EKS nodes cannot use the node's metadata credentials.
+The AWS free plan only allows a few instance types and 5 vCPUs in total (`t3.medium` was rejected), so I
+used `m7i-flex.large`. The EBS driver gets its AWS permissions through EKS Pod Identity, because pods on
+current EKS nodes can't use the node's own credentials.
 
 What it looked like:
 
@@ -376,19 +377,19 @@ The app is packaged as a Helm chart in [`helm/gittogether`](helm/gittogether):
 
 | Resource | Details |
 |---|---|
-| Backend `Deployment` | 2–5 replicas (HPA on CPU, 70% target). An init container runs `alembic upgrade head` first; a Postgres advisory lock makes replicas take turns. Liveness `/health`, readiness `/ready`. |
-| Frontend `Deployment` | 2 replicas, non-root nginx; its `/api` proxy target comes from `BACKEND_URL`. |
-| PostgreSQL `StatefulSet` | 1 replica with its own PersistentVolumeClaim (deleted on `helm uninstall`, so no disk is left behind). |
-| `Service`s | ClusterIP for backend and frontend, headless for Postgres. |
-| `Ingress` | `/api` → backend, `/` → frontend (Traefik). `/metrics` and `/ready` are not exposed (they fall through to the frontend's `index.html`); `/health` is proxied to the backend by nginx. |
-| `HorizontalPodAutoscaler`, `PodDisruptionBudget`s | Scale the API on CPU; keep at least one pod of each component during node drains. |
-| `ServiceMonitor` | Prometheus scraping of `/metrics` (enabled with the monitoring stack). |
+| Backend `Deployment` | 2 to 5 replicas (the HPA scales on CPU, target 70%). An init container runs `alembic upgrade head` first, and a Postgres advisory lock makes the replicas take turns. Liveness check `/health`, readiness check `/ready`. |
+| Frontend `Deployment` | 2 replicas of non-root nginx. The backend address for `/api` comes from `BACKEND_URL`. |
+| PostgreSQL `StatefulSet` | 1 replica with its own volume (PersistentVolumeClaim). The volume is deleted on `helm uninstall`, so no disk is left behind. |
+| `Service`s | ClusterIP for the backend and frontend, headless for Postgres. |
+| `Ingress` | `/api` goes to the backend and `/` to the frontend (Traefik). `/metrics` and `/ready` are not exposed (requests for them end up on the frontend's `index.html`). `/health` is passed to the backend by nginx. |
+| `HorizontalPodAutoscaler`, `PodDisruptionBudget`s | The HPA scales the API on CPU. The budgets keep at least one pod of each component running while a node is drained. |
+| `ServiceMonitor` | Lets Prometheus scrape `/metrics` (turned on with the monitoring stack). |
 
 **Security:** the `gittogether` namespace enforces the Kubernetes **restricted** Pod Security level. A pod
-is only admitted if it runs as non-root, has a read-only root filesystem, cannot escalate privileges,
-drops all Linux capabilities and uses the RuntimeDefault seccomp profile. The passwords and the JWT key
-are **not in git or in the values files**. `scripts/create-secrets.sh` creates a Kubernetes Secret with
-random values, and the chart refers to it.
+is only accepted if it runs as non-root, has a read-only root filesystem, can't escalate privileges, drops
+all Linux capabilities and uses the RuntimeDefault seccomp profile. The passwords and the JWT key are
+**not in git or in the values files**. `scripts/create-secrets.sh` creates a Kubernetes Secret with random
+values, and the chart uses it.
 
 **Ingress controller:** I used Traefik. The popular ingress-nginx project was retired by the Kubernetes
 project in March 2026 and no longer gets security fixes. Traefik works with the same standard `Ingress`
@@ -462,11 +463,12 @@ SHA and run `helm upgrade` (or just push it and let ArgoCD sync, see below). Rol
 
 ### GitOps with ArgoCD
 
-[`argocd/application.yaml`](argocd/application.yaml) makes ArgoCD deploy the chart straight from this repo
-(`main`, `helm/gittogether`, `values-eks.yaml`) with automated sync, pruning and self-healing. Git decides
-what runs: a manual `kubectl edit` is undone, and a new commit is rolled out by ArgoCD itself.
+[`argocd/application.yaml`](argocd/application.yaml) tells ArgoCD to deploy the chart from this repo
+(`main`, `helm/gittogether`, `values-eks.yaml`) with automated sync, pruning and self-heal. So git decides
+what runs: a manual change in the cluster is undone, and a new commit is rolled out by ArgoCD.
 
-On EKS use the script. It installs ArgoCD and the Application in the right order (see the note below):
+On EKS, use the script. It installs ArgoCD and the Application in the right order (see the known issue
+below):
 
 ```bash
 scripts/install-argocd-eks.sh
@@ -489,17 +491,17 @@ kubectl port-forward -n argocd svc/argocd-server 8081:443     # https://localhos
 kubectl get secret -n argocd argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
 ```
 
-> **Known issue on EKS 1.35 and 1.36.** On a fresh, empty cluster the API server answers `503` when
-> asked for the OpenAPI schema in protobuf format (`/openapi/v2`), although the same schema works as JSON.
-> This happens while two metrics APIs are registered: `v1.metrics.eks.amazonaws.com` (from EKS) and
+> **Known issue on EKS 1.35 and 1.36.** On a new, empty cluster the API server returns `503` when asked
+> for the OpenAPI schema in protobuf format (`/openapi/v2`), although the JSON version works. This happens
+> while two metrics APIs are registered: `v1.metrics.eks.amazonaws.com` (from EKS) and
 > `v1beta1.metrics.k8s.io` (from metrics-server). ArgoCD needs that schema, so the Application stays
 > `Unknown` with the error "failed to load open api schema ... unable to handle the request".
-> Removing both APIs fixes it; removing only one does not. `scripts/install-argocd-eks.sh` removes them,
-> waits for ArgoCD to sync, and then registers the metrics-server API again so the HPA keeps working.
-> I saw the same thing on 1.35 and 1.36 and did not find the root cause. A similar EKS problem was
-> reported in [argo-cd#25976](https://github.com/argoproj/argo-cd/issues/25976). One possible side effect:
-> ArgoCD may notice drift only at its next refresh (up to 3 minutes). In the last run the self-heal
-> test below reacted within a second, so this did not always happen.
+> Removing both APIs fixes it, removing only one doesn't. `scripts/install-argocd-eks.sh` removes them,
+> waits for the first sync, and then registers the metrics-server API again so the HPA keeps working.
+> I saw this on both versions and did not find the root cause. A similar problem is reported in
+> [argo-cd#25976](https://github.com/argoproj/argo-cd/issues/25976). A side effect is that ArgoCD may
+> notice changes only at its next refresh (up to 3 minutes). In my last run the self-heal test below
+> reacted within a second.
 
 ArgoCD showing the app as Synced and Healthy, and the resource tree:
 
@@ -507,9 +509,9 @@ ArgoCD showing the app as Synced and Healthy, and the resource tree:
 
 ![ArgoCD resource tree](demo/screenshots/argocd-tree.png)
 
-Release flow: CI builds and pushes `ghcr.io/ahmadanzar/gittogether/<component>:<commit SHA>`; you set
-`image.tag` in `helm/gittogether/values.yaml` to that SHA and push; ArgoCD notices and rolls it out.
-To roll back, revert the commit. On the local kind cluster, change `valueFiles` to `values-kind.yaml`.
+Release flow: CI pushes `ghcr.io/ahmadanzar/gittogether/<component>:<commit SHA>`. I set `image.tag` in
+`helm/gittogether/values.yaml` to that SHA and push, and ArgoCD rolls it out. To roll back, I revert the
+commit. On the local kind cluster, change `valueFiles` to `values-kind.yaml`.
 
 ### Troubleshooting lab
 
@@ -524,12 +526,12 @@ and by comparing labels, and fixed them. The full steps with screenshots are in
 
 ## Observability
 
-The backend exposes Prometheus metrics at `/metrics` (request counts, latency and sizes per endpoint,
-using `prometheus-fastapi-instrumentator`). [`kube-prometheus-stack`](monitoring/prometheus-values.yaml)
-runs Prometheus and Grafana in the cluster. The chart's `ServiceMonitor` tells Prometheus to scrape every
-backend pod (it is switched on in `values-kind.yaml` and `values-eks.yaml`). The ServiceMonitor needs the
-stack's CRDs, so install monitoring **before** the app (ArgoCD just retries until they exist). One script
-does it:
+The backend exposes Prometheus metrics at `/metrics` (request counts, latency and sizes for each
+endpoint), using `prometheus-fastapi-instrumentator`.
+[`kube-prometheus-stack`](monitoring/prometheus-values.yaml) runs Prometheus and Grafana in the cluster.
+The chart's `ServiceMonitor` tells Prometheus to scrape every backend pod, and it is turned on in
+`values-kind.yaml` and `values-eks.yaml`. The ServiceMonitor needs the stack's CRDs, so install monitoring
+**before** the app (ArgoCD keeps retrying until they exist). One script does it:
 
 ```bash
 scripts/install-monitoring.sh
@@ -538,12 +540,12 @@ kubectl port-forward -n monitoring svc/monitoring-grafana 3001:80               
 kubectl get secret -n monitoring monitoring-grafana -o jsonpath='{.data.admin-password}' | base64 -d
 ```
 
-In Prometheus, **Status -> Targets** shows both backend pods as `UP`. In Grafana, the **GitTogether API**
-dashboard ([`monitoring/dashboards/gittogether-api.json`](monitoring/dashboards/gittogether-api.json))
-is loaded automatically: the script puts it in a ConfigMap labelled `grafana_dashboard=1`, and Grafana's
-sidecar picks that up. The dashboard shows how many backend pods are up, requests per second, the share
-of 5xx errors, p95 latency (overall and per endpoint), responses by status class, and backend CPU.
-`scripts/load-test.sh` generates the traffic.
+In Prometheus, **Status -> Targets** shows both backend pods as `UP`. The **GitTogether API** dashboard in
+Grafana ([`monitoring/dashboards/gittogether-api.json`](monitoring/dashboards/gittogether-api.json)) loads
+by itself: the script stores it in a ConfigMap labelled `grafana_dashboard=1`, and Grafana's sidecar picks
+it up. It shows how many backend pods are up, requests per second, the share of 5xx errors, p95 latency
+(overall and per endpoint), responses by status class and backend CPU. `scripts/load-test.sh` generates
+the traffic.
 
 Prometheus targets (both backend pods are `UP`) and the Grafana dashboard during the load test:
 
