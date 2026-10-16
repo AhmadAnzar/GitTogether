@@ -33,6 +33,98 @@ The slides are in [`demo/`](demo/) as `slides.pdf` and `slides.pptx`.
 | M9 | Prometheus and Grafana | [Observability](#observability) | [Prometheus](demo/screenshots/prometheus.png), [Grafana](demo/screenshots/grafana.png) |
 | M10 | Slides and docs | this README, [`demo/`](demo/) | [slides.pdf](demo/slides.pdf) |
 
+## Project walkthrough
+
+The demo video follows the slides with a live run on EKS. This section is the same walkthrough in
+writing, with the commands I ran and the screenshots of the results, so each step can be checked
+without watching the video. Every screenshot here comes from the real cluster.
+
+### 1. Codebase
+
+| Path | What it is |
+|---|---|
+| `backend/app/main.py` | FastAPI app: routers, `/health`, `/ready`, `/metrics` |
+| `backend/app/routers/` | Auth, profiles and connections endpoints |
+| `backend/app/models.py`, `schemas.py` | SQLAlchemy tables and Pydantic request/response shapes |
+| `backend/app/security.py`, `access.py` | argon2 passwords, JWT cookie, the owner and privacy checks |
+| `backend/alembic/versions/` | The two database migrations (profiles, then accounts and connections) |
+| `backend/tests/` | 65 pytest tests on a separate test database, 90% coverage gate |
+| `frontend/src/` | React app (`App.jsx`, `components/`, `api.js`) with Vitest tests |
+| `backend/Dockerfile`, `frontend/Dockerfile` | Both run as non-root; the frontend is a two-stage Node build into Nginx |
+| `.github/workflows/gittogether-ci.yml` | The pipeline: 7 jobs, actions pinned to commit SHAs |
+| `terraform/` | VPC, EKS, node group, KMS key, Pod Identity for the EBS driver |
+| `helm/gittogether/` | One chart for both clusters (`values-kind.yaml`, `values-eks.yaml`) |
+| `argocd/application.yaml` | The ArgoCD Application: auto sync, prune and self-heal |
+| `monitoring/` | Prometheus and Grafana values, and the API dashboard |
+| `k8s/` | Namespace with Pod Security labels, Traefik and metrics-server values |
+
+Choices worth knowing about:
+- Images are tagged with the commit SHA, never `latest`, so every running pod traces back to one commit.
+- The namespace enforces the Kubernetes `restricted` Pod Security level, so every pod runs as non-root
+  with all capabilities dropped.
+- Secrets (database password, JWT key) are created by `scripts/create-secrets.sh` at deploy time and are
+  not in git.
+- Worker nodes sit in private subnets; only the load balancer and the NAT gateway are public.
+
+### 2. CI/CD
+
+A push to `main` starts the pipeline: `secrets` (gitleaks), `backend` (ruff, pytest, coverage gate),
+`frontend` (eslint, vitest, build), `terraform` (fmt, validate), `helm` (lint and kubeconform validation),
+`config-scan` (Trivy on the IaC), and `images`. The `images` job builds both images, scans them with
+Trivy (it fails on fixable HIGH or CRITICAL), and pushes them to GHCR tagged with the commit SHA. If
+any earlier job fails, nothing is pushed.
+[The pipeline](#cicd-pipeline), [a green run](demo/screenshots/green-run.png),
+[the image jobs](demo/screenshots/pipeline-summary.png), [the images in GHCR](demo/screenshots/ghcr-backend.png).
+
+### 3. Terraform and the AWS Console
+
+```bash
+cd terraform
+terraform init
+terraform plan          # 59 resources to add
+terraform apply
+terraform output        # cluster name, region, kubeconfig command
+terraform destroy       # when done
+```
+
+[plan](demo/screenshots/tf-plan.png), [apply](demo/screenshots/tf-apply.png),
+[VPC](demo/screenshots/aws-vpc.png), [subnets](demo/screenshots/aws-subnet.png),
+[EKS cluster](demo/screenshots/aws-eks-overview.png), [worker nodes](demo/screenshots/aws-eks-compute.png),
+[destroy](demo/screenshots/tf-destroy.png). Details are in [Infrastructure (Terraform)](#infrastructure-terraform).
+
+### 4. Kubernetes
+
+```bash
+kubectl get pods -n gittogether
+kubectl get svc -n gittogether
+kubectl get ingress -n gittogether
+helm list -n gittogether
+```
+
+[pods, services and the Helm release](demo/screenshots/kubectl-getpods.png),
+[nodes](demo/screenshots/getnodes.png), [the app through the load balancer](demo/screenshots/firstlook.png).
+Details are in [Kubernetes / Helm](#kubernetes--helm).
+
+### 5. ArgoCD and GitOps
+
+ArgoCD watches this repo. A change to `helm/gittogether/values.yaml` on `main` is rolled out by ArgoCD,
+and a change made by hand in the cluster is reverted (self-heal).
+[Synced application](demo/screenshots/argocd-synced.png), [resource tree](demo/screenshots/argocd-tree.png).
+Details are in [GitOps with ArgoCD](#gitops-with-argocd).
+
+### 6. Prometheus and Grafana
+
+[Prometheus targets showing the backend pods as UP](demo/screenshots/prometheus.png),
+[the `/metrics` output](demo/screenshots/metrics.png) and
+[the Grafana dashboard](demo/screenshots/grafana.png). Details are in [Observability](#observability).
+
+### 7. Autoscaling under load
+
+`scripts/load-test.sh` sends traffic at the load balancer. CPU went past the 70% target and the HPA
+scaled the backend from 2 to 5 pods: [load test](demo/screenshots/loadtest.png),
+[HPA scaling](demo/screenshots/hpa-scaling.png), [the new pods](demo/screenshots/hpa-pods.png).
+Details are in [Autoscaling](#autoscaling).
+
 ---
 
 ## Architecture
