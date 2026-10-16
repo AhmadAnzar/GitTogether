@@ -370,7 +370,13 @@ To roll back, revert the commit. On the local kind cluster, change `valueFiles` 
 ### Troubleshooting lab
 
 `troubleshooting/` contains two deliberately broken manifests (an image that doesn't exist, a Service
-whose selector matches nothing) with the commands to diagnose and fix them in their comments.
+whose selector matches nothing). I ran both on the EKS cluster, found the cause with `kubectl describe`
+and by comparing labels, and fixed them. The full steps with screenshots are in
+[troubleshooting/README.md](troubleshooting/README.md).
+
+![ImagePullBackOff events](demo/screenshots/ts-image-describe.png)
+
+![Service with no endpoints](demo/screenshots/ts-service-endpoints.png)
 
 ## Observability
 
