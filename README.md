@@ -16,7 +16,8 @@ come from a real run on Amazon EKS.
 |---|---|
 | ![A student profile](demo/screenshots/profile.png) | ![Connection requests](demo/screenshots/connections.png) |
 
-The slides are in [`demo/`](demo/) as `slides.pdf` and `slides.pptx`.
+The slides are in [`demo/`](demo/) as `slides.pdf` and `slides.pptx`. The demo video is a release asset:
+[watch or download it](https://github.com/AhmadAnzar/GitTogether/releases/tag/demo-video).
 
 ## Where to find each part
 
@@ -31,7 +32,7 @@ The slides are in [`demo/`](demo/) as `slides.pdf` and `slides.pptx`.
 | M7 | Terraform on AWS | [Infrastructure (Terraform)](#infrastructure-terraform) | [plan](demo/screenshots/tf-plan.png), [apply](demo/screenshots/tf-apply.png), [VPC](demo/screenshots/aws-vpc.png), [EKS](demo/screenshots/aws-eks-overview.png), [destroy](demo/screenshots/tf-destroy.png) |
 | M8 | Kubernetes, Helm, ArgoCD, HPA | [Kubernetes / Helm](#kubernetes--helm) | [pods](demo/screenshots/kubectl-getpods.png), [ArgoCD](demo/screenshots/argocd-synced.png), [HPA](demo/screenshots/hpa-scaling.png), [troubleshooting](troubleshooting/README.md) |
 | M9 | Prometheus and Grafana | [Observability](#observability) | [Prometheus](demo/screenshots/prometheus.png), [Grafana](demo/screenshots/grafana.png) |
-| M10 | Slides and docs | this README, [`demo/`](demo/) | [slides.pdf](demo/slides.pdf) |
+| M10 | Slides, video and docs | this README, [`demo/`](demo/) | [slides.pdf](demo/slides.pdf), [demo video](https://github.com/AhmadAnzar/GitTogether/releases/tag/demo-video) |
 
 ## Project walkthrough
 
