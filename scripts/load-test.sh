@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Generate load on the API to watch the HorizontalPodAutoscaler (and later Grafana) react.
+# Used in the recorded demo to show the autoscaler working.
 #
 #   scripts/load-test.sh [url] [seconds] [parallel]
 #   URL=http://<load-balancer-hostname> scripts/load-test.sh        # on EKS
