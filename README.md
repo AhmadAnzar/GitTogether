@@ -173,7 +173,8 @@ Third-party actions are pinned to full commit SHAs (the version is in a comment 
 Dependabot opens pull requests to update them. The Trivy action had its tags rewritten upstream in 2026,
 which is why I pin by SHA.
 
-A green run, and the summary of the image jobs:
+A green run ([open it on GitHub](https://github.com/AhmadAnzar/GitTogether/actions/runs/38716349963)),
+and the summary of the image jobs:
 
 ![A green pipeline run](demo/screenshots/green-run.png)
 
