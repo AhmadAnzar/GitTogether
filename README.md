@@ -104,6 +104,10 @@ helm list -n gittogether
 
 [pods, services and the Helm release](demo/screenshots/kubectl-getpods.png),
 [nodes](demo/screenshots/getnodes.png), [the app through the load balancer](demo/screenshots/firstlook.png).
+The Ingress sends `/api` to the backend and `/` to the frontend:
+
+![kubectl describe ingress](demo/screenshots/kubectl-ingress.png)
+
 Details are in [Kubernetes / Helm](#kubernetes--helm).
 
 ### 5. ArgoCD and GitOps
@@ -215,6 +219,8 @@ deletes it). Accepted connections are mutual.
 their connections. The API removes those fields before responding, so the data never reaches anyone
 else's browser, and hidden skills are excluded from skill search. Interactive docs:
 `http://localhost:8000/docs`.
+
+![Swagger UI at /docs](demo/screenshots/swagger.png)
 
 ## Run locally
 
