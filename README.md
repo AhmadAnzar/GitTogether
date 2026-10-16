@@ -120,6 +120,12 @@ docker compose up --build
 - App: http://localhost:3000
 - API docs: http://localhost:8000/docs
 
+All three services start and report healthy, and the app loads at `localhost:3000`:
+
+![docker compose ps with three healthy services](demo/screenshots/compose-up.png)
+
+![The app at localhost:3000](demo/screenshots/localhost-app.png)
+
 Postgres is not published on a host port; inspect it with `docker compose exec postgres psql -U gittogether`.
 Stop with `docker compose down` (add `-v` to delete the database volume).
 
@@ -129,6 +135,11 @@ Stop with `docker compose down` (add `-v` to delete the database volume).
 cd backend && pip install -r requirements-dev.txt && ruff check . && pytest -v
 cd frontend && npm ci && npm run lint && npm test
 ```
+
+The backend tests run against a separate SQLite database, not the real one. 65 tests pass with 99%
+coverage, and the pipeline fails below 90%:
+
+![pytest output with 65 tests passing](demo/screenshots/pytest.png)
 
 ## CI/CD pipeline
 
@@ -152,6 +163,16 @@ A green run, and the summary of the image jobs:
 ![A green pipeline run](demo/screenshots/green-run.png)
 
 ![Pipeline summary](demo/screenshots/pipeline-summary.png)
+
+The images in the GitHub Container Registry, tagged with the commit SHA (never `latest`):
+
+| Backend | Frontend |
+|---|---|
+| ![GHCR backend package](demo/screenshots/ghcr-backend.png) | ![GHCR frontend package](demo/screenshots/ghcr-frontend.png) |
+
+The commit history on `main`:
+
+![Commit history](demo/screenshots/commits.png)
 
 ## Security
 
