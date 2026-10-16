@@ -77,6 +77,16 @@ any earlier job fails, nothing is pushed.
 [The pipeline](#cicd-pipeline), [a green run](demo/screenshots/green-run.png),
 [the image jobs](demo/screenshots/pipeline-summary.png), [the images in GHCR](demo/screenshots/ghcr-backend.png).
 
+A live push: I added one comment line to `scripts/load-test.sh` and pushed it to `main`
+(commit `483a90b`). The pipeline started by itself and all 8 jobs passed in about 2 minutes
+([the run](https://github.com/AhmadAnzar/GitTogether/actions/runs/38929955524)):
+
+![Pipeline run for the live push](demo/screenshots/live-push-green.png)
+
+The backend image from that run is in GHCR with the commit SHA as its tag:
+
+![GHCR tag matching the commit](demo/screenshots/ghcr-new-tag.png)
+
 ### 3. Terraform and the AWS Console
 
 ```bash
@@ -115,6 +125,13 @@ Details are in [Kubernetes / Helm](#kubernetes--helm).
 ArgoCD watches this repo. A change to `helm/gittogether/values.yaml` on `main` is rolled out by ArgoCD,
 and a change made by hand in the cluster is reverted (self-heal).
 [Synced application](demo/screenshots/argocd-synced.png), [resource tree](demo/screenshots/argocd-tree.png).
+
+Self-heal test: I scaled the frontend from 2 to 4 pods by hand with
+`kubectl scale deploy gittogether-frontend -n gittogether --replicas=4`. ArgoCD saw that the cluster no
+longer matched git and removed the two extra pods again within a second:
+
+![Extra pods created and terminated by ArgoCD](demo/screenshots/selfheal-scaled.png)
+
 Details are in [GitOps with ArgoCD](#gitops-with-argocd).
 
 ### 6. Prometheus and Grafana
